@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Mafia Party"
+description = "A polished Arabic RTL party game for 5 to 50 players, with private role reveals, configurable Mafia and town roles, night actions, day voting, and a complete host-led game flow for phone and desktop play."
+version = "1.0.0"
+id = "artifacts/mafia-party"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20484
+
+[services.development]
+run = "pnpm --filter @workspace/mafia-party run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/mafia-party", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/mafia-party/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20484"
+BASE_PATH = "/"

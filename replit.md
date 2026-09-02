@@ -1,6 +1,6 @@
-# [Project name]
+# Mafia Party
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+لعبة مافيا عربية بنظام تمرير الهاتف، تدعم من ٥ إلى ٥٠ لاعباً وتدير الأدوار السرية والليل والنهار والتصويت.
 
 ## Run & Operate
 
@@ -22,23 +22,30 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/mafia-party/src/App.tsx` — تجربة اللعب كاملة، تعريف الأدوار، وتخزين الجولة محلياً.
+- `artifacts/mafia-party/src/index.css` — الثيم RTL والهوية البصرية المتجاوبة.
+- `artifacts/mafia-party` — تطبيق الويب القابل للفتح من الهاتف والكمبيوتر.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- النسخة الحالية Pass-and-play على جهاز واحد، لتبقى بطاقات الأدوار خاصة بدون تسجيل دخول أو خادم مركزي.
+- حالة اللعبة تحفظ في `localStorage` لاستعادة الجولة بعد إغلاق المتصفح أو تحديث الصفحة.
+- واجهة اللعبة عربية RTL ومصممة أولاً للهاتف مع دعم الشاشات الأكبر.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- إدخال ٥–٥٠ اسماً مع منع التكرار.
+- إعدادات متوازن، كلاسيكي، وفوضى، مع تخصيص يدوي للأدوار.
+- أدوار المافيا والمدينة والمستقلين، كشف خاص، أفعال ليلية، تقرير صباحي، تصويت، وتعادل يحسمه العمدة.
+- حفظ الجولة، استئنافها، وإعادة ضبطها مع تأكيد.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- المستخدم طلب واجهة بسيطة وجميلة وتجربة كاملة باللغة العربية.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- تمرير الهاتف جزء أساسي من الخصوصية: يجب إخفاء الشاشة بعد كل كشف أو نتيجة تحقيق.
 
 ## Pointers
 
