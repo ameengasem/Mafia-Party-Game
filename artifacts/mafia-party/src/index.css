@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
@@ -46,8 +45,8 @@
   --destructive: 2 72% 62%;
   --destructive-foreground: 0 0% 98%;
   --ring: 42 89% 62%;
-  --app-font-sans: 'IBM Plex Sans Arabic', sans-serif;
-  --app-font-serif: 'Readex Pro', sans-serif;
+  --app-font-sans: 'Noto Kufi Arabic', 'Segoe UI', Tahoma, sans-serif;
+  --app-font-serif: 'Noto Kufi Arabic', 'Segoe UI', Tahoma, sans-serif;
   --radius: 1rem;
 }
 
@@ -58,9 +57,9 @@ body {
   min-width: 320px;
   min-height: 100dvh;
   background:
-    radial-gradient(circle at 9% 12%, rgba(92, 64, 150, .28), transparent 30rem),
-    radial-gradient(circle at 91% 88%, rgba(180, 70, 75, .12), transparent 28rem),
-    hsl(var(--background));
+    radial-gradient(circle at 8% 5%, rgba(91, 69, 143, .3), transparent 30rem),
+    radial-gradient(circle at 94% 90%, rgba(177, 68, 83, .14), transparent 30rem),
+    linear-gradient(145deg, #151329 0%, #121022 48%, #19142b 100%);
   color: hsl(var(--foreground));
   font-family: var(--app-font-sans);
   direction: rtl;
@@ -69,6 +68,15 @@ body {
 button, input { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }
+button:focus-visible, input:focus-visible {
+  outline: 2px solid rgba(238, 190, 75, .88);
+  outline-offset: 3px;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { opacity: .55; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,.025); }
+::-webkit-scrollbar-thumb { background: rgba(238,190,75,.28); border-radius: 99px; }
 ::selection { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
 
 .app-noise {

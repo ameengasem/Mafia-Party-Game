@@ -1,0 +1,2 @@
+- [بناء التطبيقات المحمولة](android-build.md) — بيئة Replit لا توفر Android SDK محليًا؛ استخدم Workflow GitHub لبناء APK.
+- [تغليف Windows](windows-packaging.md) — هدف Electron portable يعمل على Linux، بينما مُثبّت NSIS يحتاج Windows أو Wine متوافقًا.

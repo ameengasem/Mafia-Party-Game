@@ -1,0 +1,1 @@
+# The app is a local WebView shell; no custom shrinking rules are required.

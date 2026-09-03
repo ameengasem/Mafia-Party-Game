@@ -3,9 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "desktop/main.cjs",
+  "description": "لعبة مافيا عربية من 5 إلى 50 لاعباً مع أدوار سرية ومراحل ليلية ونهارية.",
+  "author": "Mafia Party",
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
+    "build:android": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && node desktop/copy-android-assets.mjs",
+    "build:desktop": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && electron-builder --win dir --x64",
+    "build:desktop:installer": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && electron-builder --win nsis --x64",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -53,6 +59,8 @@
     "clsx": "catalog:",
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
@@ -73,5 +81,31 @@
     "vite": "catalog:",
     "wouter": "^3.3.5",
     "zod": "catalog:"
+  },
+  "build": {
+    "appId": "com.mafiaparty.desktop",
+    "productName": "Mafia Party",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/public/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Mafia Party"
+    }
   }
 }
