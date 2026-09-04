@@ -15,8 +15,8 @@ type Team = 'المافيا' | 'المدينة' | 'مستقل';
 type RoleKey = 'mafia' | 'godfather' | 'mafioso' | 'saboteur' | 'doctor' | 'fielddoctor' | 'detective' | 'psychologist' | 'tracker' | 'reporter' | 'bodyguard' | 'mayor' | 'witch' | 'vigilante' | 'jester' | 'cupid' | 'silencer' | 'illusionist' | 'oracle' | 'civilian' | 'survivor' | 'alien';
 type Phase = 'setup' | 'reveal' | 'night' | 'day' | 'voting' | 'result';
 type Player = { id: string; name: string; role: RoleKey; alive: boolean; silenced?: boolean; nightUses?: number; alienShieldUsed?: boolean };
-type NightAction = { actorId: string; role: RoleKey; targetId?: string; skipped?: boolean };
-type Game = { players: Player[]; phase: Phase; round: number; revealIndex: number; revealed: boolean; nightActions: NightAction[]; nightPlayerIndex: number; dayReport: string[]; votes: Record<string, string>; winner?: Team; lastNightInfo?: string; jesterWon?: boolean; discussionSuggestions?: boolean };
+type NightAction = { actorId: string; role: RoleKey; targetId?: string; secondaryTargetId?: string; skipped?: boolean };
+type Game = { players: Player[]; phase: Phase; round: number; revealIndex: number; revealed: boolean; nightActions: NightAction[]; nightPlayerIndex: number; dayReport: string[]; votes: Record<string, string>; linkedPairs: [string, string][]; winner?: Team; survivorWon?: boolean; lastNightInfo?: string; jesterWon?: boolean; discussionSuggestions?: boolean };
 
 const queryClient = new QueryClient();
 const STORAGE_KEY = 'mafia-party-game-v1';
@@ -46,8 +46,8 @@ const ROLES: Record<RoleKey, RoleDefinition> = {
   reporter: { name: 'مراسل المدينة', team: 'المدينة', description: 'يجمع خبراً صغيراً يساعد النقاش من دون فضح هوية أحد.', power: 'متوسطة', night: 'يفحص لاعباً ويعرف هل هو من الأدوار التي تتحرك ليلاً.', recommendedMax: 1, max: 1, icon: BookOpen, color: 'sky' },
   bodyguard: { name: 'الحارس', team: 'المدينة', description: 'يحمي لاعباً من الخطر، وقد يدفع الثمن بدلاً عنه.', power: 'عالية', night: 'يحمي لاعباً واحداً من الخطر.', recommendedMax: 1, max: 2, icon: Shield, color: 'sky' },
   mayor: { name: 'العمدة', team: 'المدينة', description: 'صوته يحسم التعادل في التصويت.', power: 'متوسطة', night: 'لا فعل ليلي؛ تظهر قوته عند تعادل الأصوات.', recommendedMax: 1, max: 1, icon: Gavel, color: 'amber' },
-  witch: { name: 'الساحرة', team: 'المدينة', description: 'تستطيع تعطيل لاعب أو إنقاذ ضحية مرة واحدة.', power: 'عالية', night: 'تستطيع إسكات لاعب؛ استخدموا قواعد المجموعة للإنقاذ.', recommendedMax: 1, max: 1, icon: Sparkles, color: 'violet' },
-  vigilante: { name: 'المنتقم', team: 'المدينة', description: 'يملك رصاصة واحدة لمواجهة الخطر ليلاً.', power: 'عالية', night: 'يستهدف لاعباً واحداً؛ قد يخرج من اللعبة.', recommendedMax: 1, max: 1, icon: Crosshair, color: 'amber' },
+  witch: { name: 'الساحرة', team: 'المدينة', description: 'تستطيع إسكات لاعب واحد مرة واحدة في اللعبة.', power: 'عالية', night: 'تختار لاعباً يصمت في نقاش الغد؛ لا يمكنها استخدام القدرة مرة أخرى.', recommendedMax: 1, max: 1, icon: Sparkles, color: 'violet' },
+  vigilante: { name: 'المنتقم', team: 'المدينة', description: 'يملك رصاصة واحدة لمواجهة الخطر ليلاً.', power: 'عالية', night: 'يستهدف لاعباً واحداً مرة واحدة؛ قد يخرج من اللعبة.', recommendedMax: 1, max: 1, icon: Crosshair, color: 'amber' },
   jester: { name: 'المهرّج', team: 'مستقل', description: 'يفوز وحده إن طُرد بالتصويت.', power: 'مربكة', night: 'لا فعل ليلي؛ هدفه أن يقنع المدينة بإخراجه.', recommendedMax: 1, max: 1, icon: Sparkles, color: 'fuchsia' },
   cupid: { name: 'كيوبيد', team: 'مستقل', description: 'يربط لاعبين في بداية اللعبة؛ إذا مات أحدهما يتأثر الآخر.', power: 'متوسطة', night: 'يربط لاعبين في بداية اللعبة وفق قواعد المجموعة.', recommendedMax: 1, max: 1, icon: HeartPulse, color: 'pink' },
   silencer: { name: 'المُسكت', team: 'المافيا', description: 'يمنع لاعباً من الكلام في نقاش الغد.', power: 'عالية', night: 'يختار لاعباً لا يتكلم في نقاش الغد.', recommendedMax: 1, max: 2, icon: LockKeyhole, color: 'rose' },
@@ -83,6 +83,13 @@ function uid() { return Math.random().toString(36).slice(2, 10); }
 function saveGame(game: Game | null) { if (game) localStorage.setItem(STORAGE_KEY, JSON.stringify(game)); else localStorage.removeItem(STORAGE_KEY); }
 function getTeam(role: RoleKey) { return ROLES[role].team; }
 function teamClass(team: Team) { return team === 'المافيا' ? 'bg-rose-400/10 text-rose-300' : team === 'المدينة' ? 'bg-sky-400/10 text-sky-300' : 'bg-violet-400/10 text-violet-300'; }
+function getWinnerState(players: Player[]) {
+  const alive = players.filter((player) => player.alive);
+  const mafiaAlive = alive.filter((player) => getTeam(player.role) === 'المافيا').length;
+  const oppositionAlive = alive.filter((player) => getTeam(player.role) !== 'المافيا').length;
+  const winner: Team | undefined = mafiaAlive === 0 ? 'المدينة' : mafiaAlive >= oppositionAlive ? 'المافيا' : undefined;
+  return { winner, survivorWon: Boolean(winner && alive.some((player) => player.role === 'survivor')) };
+}
 
 function AppShell({ children }: { children: ReactNode }) {
   return <div dir="rtl" className="relative min-h-[100dvh] overflow-x-hidden"><div className="app-noise" />{children}</div>;
@@ -186,13 +193,15 @@ function Reveal({ game, onReveal, onNext }: { game: Game; onReveal: () => void; 
   return <GameFrame game={game} privateRole={game.revealed ? player.role : undefined}><div className="mx-auto flex min-h-[70dvh] max-w-lg flex-col items-center justify-center text-center"><div className="mb-5 flex items-center gap-2 text-xs text-stone-500"><LockKeyhole size={15} className="text-amber-300" /> الكشف خاص — مرّروا الهاتف بعد الإخفاء</div><div className="mb-5 text-sm text-stone-400">اللاعب {game.revealIndex + 1} من {game.players.length}</div>{!game.revealed ? <><div className="pulse-ring mb-8 flex size-28 items-center justify-center rounded-[2rem] border border-amber-300/25 bg-amber-300/[.08] text-amber-300"><Eye size={42} strokeWidth={1.3} /></div><h1 className="font-serif text-3xl font-semibold text-stone-100">هل أنت <span className="text-amber-300">{player.name}</span>؟</h1><p className="mt-3 max-w-xs text-sm leading-7 text-stone-500">تأكد أن الجميع لا ينظر. اضغط عندما تكون مستعداً لرؤية دورك.</p><Button onClick={onReveal} className="mt-8 min-h-14 w-full max-w-xs text-base" testId={`button-reveal-${player.id}`}>أنا {player.name}، أريد كشف دوري <Eye size={18} /></Button></> : <div className="rise-in w-full"><div className="mx-auto mb-6 flex size-28 items-center justify-center rounded-[2rem] border border-amber-300/40 bg-amber-300/10 text-amber-300"><Icon size={48} strokeWidth={1.4} /></div><div className="text-sm text-stone-400">دورك في هذه الليلة</div><h1 data-testid={`text-role-reveal-${player.id}`} className="mt-2 font-serif text-5xl font-semibold text-amber-300">{role.name}</h1><div className="mx-auto mt-4 inline-flex rounded-full bg-white/8 px-3 py-1 text-xs text-stone-300">{role.team} • القوة: {role.power}</div><p className="mx-auto mt-5 max-w-xs text-sm leading-7 text-stone-400">{role.description}</p><div className="mx-auto mt-4 max-w-xs rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-4 text-right"><div className="mb-1 text-xs font-semibold text-amber-200">قدرتك في الليل</div><p className="text-xs leading-6 text-stone-300">{role.night}</p></div><div className="mx-auto mt-5 max-w-xs rounded-xl border border-rose-300/15 bg-rose-300/[.05] p-3 text-xs leading-6 text-rose-100/70">احفظ دورك جيداً. لا تكشفه لأحد، ثم أخفِ الشاشة قبل تمرير الهاتف.</div><Button onClick={onNext} className="mt-6 min-h-14 w-full max-w-xs" testId={`button-hide-role-${player.id}`}>{game.revealIndex === game.players.length - 1 ? 'ابدأ الليل الأول' : 'أخفي دوري ومرّر الهاتف'} <ChevronLeft size={18} /></Button></div>}</div></GameFrame>;
 }
 
-function Night({ game, onAction, onNextPlayer, onFinish }: { game: Game; onAction: (actorId: string, targetId?: string) => void; onNextPlayer: () => void; onFinish: () => void }) {
+function Night({ game, onAction, onNextPlayer, onFinish }: { game: Game; onAction: (actorId: string, targetId?: string, secondaryTargetId?: string) => void; onNextPlayer: () => void; onFinish: () => void }) {
   const [privateNotice, setPrivateNotice] = useState<string | null>(null);
+  const [cupidFirstTarget, setCupidFirstTarget] = useState<string | null>(null);
   const living = game.players.filter((player) => player.alive);
   const playerIndex = game.nightPlayerIndex ?? 0;
   const actor = living[playerIndex];
-  const nightRoles: RoleKey[] = ['mafia', 'godfather', 'mafioso', 'saboteur', 'doctor', 'fielddoctor', 'detective', 'psychologist', 'tracker', 'reporter', 'bodyguard', 'witch', 'vigilante', 'silencer', 'illusionist', 'oracle'];
-  const hasAbility = Boolean(actor && nightRoles.includes(actor.role) && !(actor.role === 'oracle' && (actor.nightUses || 0) > 0));
+  const nightRoles: RoleKey[] = ['mafia', 'godfather', 'mafioso', 'saboteur', 'doctor', 'fielddoctor', 'detective', 'psychologist', 'tracker', 'reporter', 'bodyguard', 'witch', 'vigilante', 'silencer', 'illusionist', 'oracle', 'cupid'];
+  const oneUseRoles: RoleKey[] = ['witch', 'vigilante', 'oracle', 'cupid'];
+  const hasAbility = Boolean(actor && nightRoles.includes(actor.role) && !(oneUseRoles.includes(actor.role) && (actor.nightUses || 0) > 0) && (actor.role !== 'cupid' || game.round === 1));
   const finished = !actor;
   const role = actor ? ROLES[actor.role] : null;
   const Icon = role?.icon || Moon;
@@ -201,10 +210,15 @@ function Night({ game, onAction, onNextPlayer, onFinish }: { game: Game; onActio
     if (actor.role === 'fielddoctor' && target.id === actor.id) return false;
     return target.id !== actor.id || actor.role === 'doctor';
   });
-  const submitAction = (targetId?: string) => {
+  const submitAction = (targetId?: string, secondaryTargetId?: string) => {
     if (!actor || !hasAbility) return;
+    if (actor.role === 'cupid' && targetId && !secondaryTargetId && !cupidFirstTarget) {
+      setCupidFirstTarget(targetId);
+      return;
+    }
     const target = targetId ? game.players.find((player) => player.id === targetId) : undefined;
-    onAction(actor.id, targetId);
+    onAction(actor.id, targetId, secondaryTargetId);
+    setCupidFirstTarget(null);
     if (!target) {
       setPrivateNotice('تم تسجيل تخطي القدرة. أخفِ الشاشة ومرّر الهاتف.');
     } else if (actor.role === 'detective') {
@@ -218,6 +232,9 @@ function Night({ game, onAction, onNextPlayer, onFinish }: { game: Game; onActio
       setPrivateNotice(`رؤية العرّافة: دور ${target.name} هو «${ROLES[target.role].name}».`);
     } else if (actor.role === 'saboteur') {
       setPrivateNotice(`تم تشويش ${target.name}. لن تُحتسب قدرته هذه الليلة.`);
+    } else if (actor.role === 'cupid') {
+      const second = secondaryTargetId ? game.players.find((player) => player.id === secondaryTargetId) : undefined;
+      setPrivateNotice(second ? `تم ربط ${target.name} و${second.name}. إذا خرج أحدهما، يتأثر الآخر.` : 'اختر لاعبين لربطهما.');
     } else {
       setPrivateNotice('تم تسجيل الفعل السري. أخفِ الشاشة ومرّر الهاتف.');
     }
@@ -247,8 +264,8 @@ function Night({ game, onAction, onNextPlayer, onFinish }: { game: Game; onActio
           <div><div className="text-xs text-stone-500">سلّم الهاتف إلى</div><div data-testid={`text-night-actor-${actor.id}`} className="font-semibold text-stone-100">{actor.name}</div></div>
           <div className="mr-auto rounded-full bg-indigo-300/10 px-3 py-1 text-[10px] text-indigo-200">دور سري {playerIndex + 1}/{living.length}</div>
         </div>
-        {hasAbility ? <><div className="mb-4 rounded-2xl border border-amber-300/15 bg-amber-300/[.04] p-4"><div className="text-xs font-semibold text-amber-200">قدرة {role?.name} — القوة {role?.power}</div><p className="mt-1 text-sm leading-6 text-stone-300">{role?.night}</p></div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{targetable.map((target) => <button data-testid={`button-target-${target.id}`} key={target.id} onClick={() => submitAction(target.id)} className="flex min-h-14 items-center gap-2 rounded-xl border border-white/10 bg-black/10 px-3 text-right text-sm text-stone-200 transition hover:border-amber-300/45 hover:bg-amber-300/[.08]"><span className="flex size-8 items-center justify-center rounded-lg bg-white/8 text-xs text-stone-400">{target.name.slice(0, 1)}</span>{target.name}</button>)}</div>
+        {hasAbility ? <><div className="mb-4 rounded-2xl border border-amber-300/15 bg-amber-300/[.04] p-4"><div className="text-xs font-semibold text-amber-200">قدرة {role?.name} — القوة {role?.power}</div><p className="mt-1 text-sm leading-6 text-stone-300">{actor.role === 'cupid' && cupidFirstTarget ? `اختر اللاعب الثاني — تم اختيار ${game.players.find((player) => player.id === cupidFirstTarget)?.name}.` : role?.night}</p></div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{targetable.filter((target) => target.id !== cupidFirstTarget).map((target) => <button data-testid={`button-target-${target.id}`} key={target.id} onClick={() => actor.role === 'cupid' && cupidFirstTarget ? submitAction(cupidFirstTarget, target.id) : submitAction(target.id)} className="flex min-h-14 items-center gap-2 rounded-xl border border-white/10 bg-black/10 px-3 text-right text-sm text-stone-200 transition hover:border-amber-300/45 hover:bg-amber-300/[.08]"><span className="flex size-8 items-center justify-center rounded-lg bg-white/8 text-xs text-stone-400">{target.name.slice(0, 1)}</span>{target.name}</button>)}</div>
           <button data-testid={`button-skip-action-${actor.id}`} onClick={() => submitAction()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 py-3 text-xs text-stone-500 hover:text-stone-300">لا أستخدم القدرة الليلة <ChevronLeft size={14} /></button></> : <div className="rounded-2xl border border-indigo-200/15 bg-indigo-300/[.05] p-6 text-center"><Users className="mx-auto mb-3 text-indigo-200" size={25} /><h2 className="font-serif text-xl text-stone-100">لا توجد قدرة ليلية</h2><p className="mt-2 text-sm leading-6 text-stone-400">أنت آمن الآن. لا يظهر دورك لأي لاعب آخر.</p><Button onClick={onNextPlayer} className="mt-6 min-h-14 w-full" testId={`button-pass-night-${actor.id}`}>أخفي الشاشة ومرّر الهاتف <ChevronLeft size={18} /></Button></div>}
       </div>}
     </div>
@@ -283,7 +300,7 @@ function Voting({ game, onVote, onResolve }: { game: Game; onVote: (voterId: str
 function Result({ game, onReset }: { game: Game; onReset: () => void }) {
   const [guide, setGuide] = useState(false);
   const winner = game.winner;
-  return <main className="screen-enter min-h-[100dvh] px-4 py-8 sm:px-8"><div className="mx-auto max-w-4xl"><header className="flex items-center justify-between"><Brand /><button data-testid="button-open-role-guide-result" onClick={() => setGuide(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs text-stone-400 transition hover:text-amber-200"><BookOpen size={15} /> دليل الأدوار</button></header><div className="mt-12 text-center"><div className="pulse-ring mx-auto mb-6 flex size-20 items-center justify-center rounded-[1.7rem] border border-amber-300/30 bg-amber-300/10 text-amber-300">{winner === 'المافيا' ? <Skull size={36} /> : <Crown size={36} />}</div><div className="text-xs font-semibold tracking-[.3em] text-amber-300/70">انتهت اللعبة</div><h1 data-testid="text-winner" className="mt-3 font-serif text-5xl font-semibold text-stone-50">{game.jesterWon ? 'المهرّج' : winner} يفوز</h1><p className="mx-auto mt-4 max-w-md text-sm leading-7 text-stone-400">{game.jesterWon ? 'أُخرج المهرّج بالتصويت. كان هذا كل ما يريده.' : winner === 'المافيا' ? 'تفوّقت المافيا على المدينة. بعض الأسرار أقوى من الحقيقة.' : 'صمدت المدينة حتى انكشف آخر خيط.'}</p></div><div className="mt-10 rounded-3xl border border-white/10 bg-white/[.045] p-5 sm:p-7"><div className="mb-5 flex items-center justify-between"><h2 className="font-serif text-xl text-stone-100">كشف الستار</h2><span className="text-xs text-stone-500">{game.players.length} أدوار</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">{game.players.map((p) => { const role = ROLES[p.role]; return <div data-testid={`card-final-role-${p.id}`} key={p.id} className={`rounded-2xl border p-3 ${p.alive ? 'border-emerald-300/15 bg-emerald-300/[.04]' : 'border-white/8 bg-black/10 opacity-75'}`}><div className="text-sm font-semibold text-stone-200">{p.name}</div><div className="mt-1 text-xs text-amber-300">{role.name} • القوة: {role.power}</div><div className="mt-1 text-[10px] text-stone-600">{role.team} {p.alive ? '• حي' : '• خرج'}</div><p className="mt-2 text-[11px] leading-5 text-stone-500">{role.description}</p></div>; })}</div><div className="mt-5 flex items-start gap-2 rounded-xl border border-rose-300/15 bg-rose-300/[.04] p-3 text-xs leading-6 text-rose-100/70"><LockKeyhole className="mt-1 shrink-0" size={14} /> هذه الشاشة تكشف الأدوار. شاركوها فقط بعد انتهاء اللعبة، واحترموا خصوصية كل لاعب.</div></div><div className="mt-7 flex justify-center"><Button onClick={onReset} className="min-h-14 px-8" testId="button-new-game-result">ابدأوا لعبة جديدة <RotateCcw size={18} /></Button></div></div>{guide && <RoleGuide onClose={() => setGuide(false)} />}</main>;
+  return <main className="screen-enter min-h-[100dvh] px-4 py-8 sm:px-8"><div className="mx-auto max-w-4xl"><header className="flex items-center justify-between"><Brand /><button data-testid="button-open-role-guide-result" onClick={() => setGuide(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs text-stone-400 transition hover:text-amber-200"><BookOpen size={15} /> دليل الأدوار</button></header><div className="mt-12 text-center"><div className="pulse-ring mx-auto mb-6 flex size-20 items-center justify-center rounded-[1.7rem] border border-amber-300/30 bg-amber-300/10 text-amber-300">{game.jesterWon ? <Sparkles size={36} /> : winner === 'المافيا' ? <Skull size={36} /> : <Crown size={36} />}</div><div className="text-xs font-semibold tracking-[.3em] text-amber-300/70">انتهت اللعبة</div><h1 data-testid="text-winner" className="mt-3 font-serif text-5xl font-semibold text-stone-50">{game.jesterWon ? 'المهرّج' : winner} يفوز</h1><p className="mx-auto mt-4 max-w-md text-sm leading-7 text-stone-400">{game.jesterWon ? 'أُخرج المهرّج بالتصويت. كان هذا كل ما يريده.' : winner === 'المافيا' ? 'تفوّقت المافيا على المدينة. بعض الأسرار أقوى من الحقيقة.' : 'صمدت المدينة حتى انكشف آخر خيط.'}</p>{game.survivorWon && !game.jesterWon && <div className="mx-auto mt-4 inline-flex items-center gap-2 rounded-full border border-teal-300/20 bg-teal-300/[.08] px-4 py-2 text-xs text-teal-200"><Shield size={14} /> الناجي بقي حيّاً وحقق هدفه أيضاً.</div>}</div><div className="mt-10 rounded-3xl border border-white/10 bg-white/[.045] p-5 sm:p-7"><div className="mb-5 flex items-center justify-between"><h2 className="font-serif text-xl text-stone-100">كشف الستار</h2><span className="text-xs text-stone-500">{game.players.length} أدوار</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">{game.players.map((p) => { const role = ROLES[p.role]; return <div data-testid={`card-final-role-${p.id}`} key={p.id} className={`rounded-2xl border p-3 ${p.alive ? 'border-emerald-300/15 bg-emerald-300/[.04]' : 'border-white/8 bg-black/10 opacity-75'}`}><div className="text-sm font-semibold text-stone-200">{p.name}</div><div className="mt-1 text-xs text-amber-300">{role.name} • القوة: {role.power}</div><div className="mt-1 text-[10px] text-stone-600">{role.team} {p.alive ? '• حي' : '• خرج'}</div><p className="mt-2 text-[11px] leading-5 text-stone-500">{role.description}</p></div>; })}</div><div className="mt-5 flex items-start gap-2 rounded-xl border border-rose-300/15 bg-rose-300/[.04] p-3 text-xs leading-6 text-rose-100/70"><LockKeyhole className="mt-1 shrink-0" size={14} /> هذه الشاشة تكشف الأدوار. شاركوها فقط بعد انتهاء اللعبة، واحترموا خصوصية كل لاعب.</div></div><div className="mt-7 flex justify-center"><Button onClick={onReset} className="min-h-14 px-8" testId="button-new-game-result">ابدأوا لعبة جديدة <RotateCcw size={18} /></Button></div></div>{guide && <RoleGuide onClose={() => setGuide(false)} />}</main>;
 }
 
 function GameApp() {
@@ -291,11 +308,23 @@ function GameApp() {
   const [confirmReset, setConfirmReset] = useState(false);
   useEffect(() => { saveGame(game); }, [game]);
   const reset = () => { setGame(null); setConfirmReset(false); };
-  const start = (names: string[], roleCounts: Partial<Record<RoleKey, number>>, discussionSuggestions: boolean) => { const roleList = Object.entries(roleCounts).flatMap(([role, count]) => Array.from({ length: count || 0 }, () => role as RoleKey)); const shuffledRoles = [...roleList].sort(() => Math.random() - .5); const players = names.map((name, index) => ({ id: uid(), name, role: shuffledRoles[index] || 'civilian', alive: true })); setGame({ players, phase: 'reveal', round: 0, revealIndex: 0, revealed: false, nightActions: [], nightPlayerIndex: 0, dayReport: [], votes: {}, discussionSuggestions }); };
+  const start = (names: string[], roleCounts: Partial<Record<RoleKey, number>>, discussionSuggestions: boolean) => { const roleList = Object.entries(roleCounts).flatMap(([role, count]) => Array.from({ length: count || 0 }, () => role as RoleKey)); const shuffledRoles = [...roleList].sort(() => Math.random() - .5); const players = names.map((name, index) => ({ id: uid(), name, role: shuffledRoles[index] || 'civilian', alive: true })); setGame({ players, phase: 'reveal', round: 0, revealIndex: 0, revealed: false, nightActions: [], nightPlayerIndex: 0, dayReport: [], votes: {}, linkedPairs: [], discussionSuggestions }); };
   const update = (fn: (current: Game) => Game) => setGame((current) => current ? fn(current) : current);
   const reveal = () => update((g) => ({ ...g, revealed: true }));
   const nextReveal = () => update((g) => g.revealIndex < g.players.length - 1 ? ({ ...g, revealIndex: g.revealIndex + 1, revealed: false }) : ({ ...g, phase: 'night', round: 1, revealIndex: 0, revealed: false, nightActions: [], nightPlayerIndex: 0, dayReport: [], votes: {} }));
-  const nightAction = (actorId: string, targetId?: string) => update((g) => ({ ...g, nightActions: [...g.nightActions, { actorId, role: g.players.find((p) => p.id === actorId)?.role || 'civilian', targetId, skipped: !targetId }], players: g.players.map((player) => player.id === actorId && player.role === 'oracle' && targetId ? { ...player, nightUses: (player.nightUses || 0) + 1 } : player) }));
+  const nightAction = (actorId: string, targetId?: string, secondaryTargetId?: string) => update((g) => {
+    const role = g.players.find((player) => player.id === actorId)?.role || 'civilian';
+    const onceRole = ['witch', 'vigilante', 'oracle', 'cupid'].includes(role);
+    const linkedPairs = role === 'cupid' && targetId && secondaryTargetId && g.round === 1
+      ? [...(g.linkedPairs || []), [targetId, secondaryTargetId] as [string, string]]
+      : (g.linkedPairs || []);
+    return {
+      ...g,
+      linkedPairs,
+      nightActions: [...g.nightActions, { actorId, role, targetId, secondaryTargetId, skipped: !targetId }],
+      players: g.players.map((player) => player.id === actorId && onceRole && targetId ? { ...player, nightUses: (player.nightUses || 0) + 1 } : player),
+    };
+  });
   const nextNightPlayer = () => update((g) => ({ ...g, nightPlayerIndex: (g.nightPlayerIndex ?? 0) + 1 }));
   const finishNight = () => update((g) => {
     const blockedActorIds = new Set(g.nightActions.filter((action) => action.role === 'saboteur' && action.targetId).map((action) => action.targetId as string));
@@ -306,28 +335,40 @@ function GameApp() {
     const vigilante = actions.find((action) => action.role === 'vigilante' && action.targetId);
     const victims = [mafia?.targetId, vigilante?.targetId].filter(Boolean) as string[];
     const protectedIds = [doctor?.targetId, bodyguard?.targetId].filter(Boolean) as string[];
-    const attemptedDeaths = [...new Set(victims.filter((id) => !protectedIds.includes(id)))];
+    const bodyguardSacrifice = bodyguard?.targetId && victims.includes(bodyguard.targetId) ? bodyguard.actorId : undefined;
+    const initialDeaths = [...new Set([...victims.filter((id) => !protectedIds.includes(id)), ...(bodyguardSacrifice ? [bodyguardSacrifice] : [])])];
+    const deathIds = new Set(initialDeaths);
+    const pendingDeaths = [...initialDeaths];
+    while (pendingDeaths.length) {
+      const deadId = pendingDeaths.shift();
+      if (!deadId) continue;
+      for (const pair of g.linkedPairs || []) {
+        if (!pair.includes(deadId)) continue;
+        const linkedId = pair[0] === deadId ? pair[1] : pair[0];
+        if (!deathIds.has(linkedId) && !protectedIds.includes(linkedId)) {
+          deathIds.add(linkedId);
+          pendingDeaths.push(linkedId);
+        }
+      }
+    }
     const silencedIds = actions.filter((action) => ['witch', 'silencer', 'illusionist'].includes(action.role) && action.targetId).map((action) => action.targetId as string);
     const shieldedIds = new Set<string>();
     const players = g.players.map((player) => {
-      if (attemptedDeaths.includes(player.id) && player.role === 'alien' && !player.alienShieldUsed) {
+      if (deathIds.has(player.id) && player.role === 'alien' && !player.alienShieldUsed) {
         shieldedIds.add(player.id);
         return { ...player, alienShieldUsed: true, silenced: false };
       }
-      return attemptedDeaths.includes(player.id) ? { ...player, alive: false, silenced: false } : { ...player, silenced: silencedIds.includes(player.id) };
+      return deathIds.has(player.id) ? { ...player, alive: false, silenced: false } : { ...player, silenced: silencedIds.includes(player.id) };
     });
-    const reportIds = players.filter((player) => attemptedDeaths.includes(player.id) && !player.alive).map((player) => player.id);
-    const aliveAfter = players.filter((p) => p.alive);
-    const mafiaAlive = aliveAfter.filter((p) => getTeam(p.role) === 'المافيا').length;
-    const oppositionAlive = aliveAfter.filter((p) => getTeam(p.role) !== 'المافيا').length;
-    const winner: Team | undefined = mafiaAlive === 0 ? 'المدينة' : mafiaAlive >= oppositionAlive ? 'المافيا' : undefined;
+    const reportIds = players.filter((player) => deathIds.has(player.id) && !player.alive).map((player) => player.id);
+    const { winner, survivorWon } = getWinnerState(players);
     const nightInfo = shieldedIds.size ? 'نجا الزائر الغريب من أول ضربة ليلية.' : undefined;
-    return winner ? { ...g, players, phase: 'result', winner, dayReport: players.filter((p) => reportIds.includes(p.id)).map((p) => p.name), nightActions: [], nightPlayerIndex: 0, votes: {}, lastNightInfo: nightInfo } : { ...g, players, phase: 'day', dayReport: players.filter((p) => reportIds.includes(p.id)).map((p) => p.name), nightActions: [], nightPlayerIndex: 0, votes: {}, lastNightInfo: nightInfo };
+    return winner ? { ...g, players, phase: 'result', winner, survivorWon, dayReport: players.filter((p) => reportIds.includes(p.id)).map((p) => p.name), nightActions: [], nightPlayerIndex: 0, votes: {}, lastNightInfo: nightInfo } : { ...g, players, phase: 'day', dayReport: players.filter((p) => reportIds.includes(p.id)).map((p) => p.name), nightActions: [], nightPlayerIndex: 0, votes: {}, lastNightInfo: nightInfo };
   });
   const startVoting = () => update((g) => ({ ...g, phase: 'voting', votes: {} }));
   const startNight = () => update((g) => ({ ...g, phase: 'night', round: g.round + 1, nightActions: [], nightPlayerIndex: 0, dayReport: [], votes: {}, lastNightInfo: undefined, players: g.players.map((p) => ({ ...p, silenced: false })) }));
   const vote = (voterId: string, targetId: string) => update((g) => ({ ...g, votes: { ...g.votes, [voterId]: targetId } }));
-  const resolveVotes = () => update((g) => { const tally: Record<string, number> = {}; Object.values(g.votes).forEach((id) => { tally[id] = (tally[id] || 0) + 1; }); const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]); const topVotes = ranked[0]?.[1] || 0; const tiedIds = ranked.filter(([, count]) => count === topVotes).map(([id]) => id); const mayor = g.players.find((p) => p.alive && p.role === 'mayor'); const mayorChoice = mayor ? g.votes[mayor.id] : undefined; const eliminatedId = tiedIds.length > 1 ? (mayorChoice && tiedIds.includes(mayorChoice) ? mayorChoice : undefined) : tiedIds[0]; const eliminated = g.players.find((p) => p.id === eliminatedId); const players = eliminated ? g.players.map((p) => p.id === eliminatedId ? { ...p, alive: false } : p) : g.players; const jesterWon = eliminated?.role === 'jester'; const aliveAfter = players.filter((p) => p.alive); const mafiaAlive = aliveAfter.filter((p) => getTeam(p.role) === 'المافيا').length; const oppositionAlive = aliveAfter.filter((p) => getTeam(p.role) !== 'المافيا').length; const winner: Team | undefined = jesterWon ? 'مستقل' : mafiaAlive === 0 ? 'المدينة' : mafiaAlive >= oppositionAlive ? 'المافيا' : undefined; const tieNotice = !eliminated && tiedIds.length > 1 ? (mayor ? 'تعادل في الأصوات — استخدموا صوت العمدة للحسم في الجولة التالية.' : 'تعادل في الأصوات — لا أحد يخرج الليلة.') : undefined; return winner ? { ...g, players, phase: 'result', winner, jesterWon } : { ...g, players, phase: 'day', dayReport: eliminated ? [eliminated.name] : [], votes: {}, round: g.round, lastNightInfo: tieNotice }; });
+  const resolveVotes = () => update((g) => { const tally: Record<string, number> = {}; Object.values(g.votes).forEach((id) => { tally[id] = (tally[id] || 0) + 1; }); const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]); const topVotes = ranked[0]?.[1] || 0; const tiedIds = ranked.filter(([, count]) => count === topVotes).map(([id]) => id); const mayor = g.players.find((p) => p.alive && p.role === 'mayor'); const mayorChoice = mayor ? g.votes[mayor.id] : undefined; const eliminatedId = tiedIds.length > 1 ? (mayorChoice && tiedIds.includes(mayorChoice) ? mayorChoice : undefined) : tiedIds[0]; const eliminated = g.players.find((p) => p.id === eliminatedId); const players = eliminated ? g.players.map((p) => p.id === eliminatedId ? { ...p, alive: false } : p) : g.players; const jesterWon = eliminated?.role === 'jester'; const { winner: teamWinner, survivorWon } = getWinnerState(players); const winner: Team | undefined = jesterWon ? 'مستقل' : teamWinner; const tieNotice = !eliminated && tiedIds.length > 1 ? (mayor ? 'تعادل في الأصوات — استخدموا صوت العمدة للحسم في الجولة التالية.' : 'تعادل في الأصوات — لا أحد يخرج الليلة.') : undefined; return winner ? { ...g, players, phase: 'result', winner, survivorWon: !jesterWon && survivorWon, jesterWon } : { ...g, players, phase: 'day', dayReport: eliminated ? [eliminated.name] : [], votes: {}, round: g.round, lastNightInfo: tieNotice }; });
   const content = !game ? <Setup onStart={start} savedGame={game} onResume={() => {}} onReset={reset} /> : game.phase === 'reveal' ? <Reveal game={game} onReveal={reveal} onNext={nextReveal} /> : game.phase === 'night' ? <Night game={game} onAction={nightAction} onNextPlayer={nextNightPlayer} onFinish={finishNight} /> : game.phase === 'day' ? <Day game={game} onVoteStart={startVoting} onNewNight={startNight} /> : game.phase === 'voting' ? <Voting game={game} onVote={vote} onResolve={resolveVotes} /> : <Result game={game} onReset={reset} />;
   return <AppShell>{content}{game && game.phase !== 'result' && <button data-testid="button-safe-reset" onClick={() => setConfirmReset(true)} aria-label="إعادة ضبط اللعبة" className="fixed bottom-4 left-4 z-10 flex size-10 items-center justify-center rounded-xl border border-white/10 bg-[#211d39]/90 text-stone-500 backdrop-blur transition hover:text-rose-300" title="إعادة ضبط اللعبة"><RotateCcw size={16} /></button>}{confirmReset && <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#090812]/80 p-4 backdrop-blur-sm"><div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#211d39] p-6 text-center shadow-2xl"><div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-rose-400/10 text-rose-300"><Trash2 size={22} /></div><h2 className="font-serif text-xl font-semibold text-stone-100">إيقاف اللعبة؟</h2><p className="mt-2 text-sm leading-6 text-stone-500">سيُحذف التقدم المحفوظ من هذا الهاتف.</p><div className="mt-6 flex gap-2"><Button onClick={() => setConfirmReset(false)} variant="secondary" className="flex-1" testId="button-cancel-reset">أكمل اللعبة</Button><Button onClick={reset} variant="danger" className="flex-1" testId="button-confirm-reset">نعم، ابدأ من جديد</Button></div></div></div>}</AppShell>;
 }
