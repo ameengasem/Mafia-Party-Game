@@ -1,4 +1,4 @@
-import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -7,12 +7,14 @@ import os from 'node:os';
 const desktopDir = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(desktopDir, '..');
 const stagingDir = path.join(os.tmpdir(), 'mafia-party-electron-build');
+const stagingOutputDir = path.join(stagingDir, 'release');
 const outputDir = path.join(appDir, 'release');
 const target = process.argv.includes('--nsis') ? 'nsis' : 'dir';
 
 await rm(stagingDir, { recursive: true, force: true });
 await mkdir(path.join(stagingDir, 'dist'), { recursive: true });
 await mkdir(path.join(stagingDir, 'desktop'), { recursive: true });
+await mkdir(stagingOutputDir, { recursive: true });
 await cp(path.join(appDir, 'dist', 'public'), path.join(stagingDir, 'dist', 'public'), { recursive: true });
 await cp(path.join(desktopDir, 'main.cjs'), path.join(stagingDir, 'desktop', 'main.cjs'));
 
@@ -27,7 +29,7 @@ const stagedPackage = {
     appId: 'com.mafiaparty.desktop',
     productName: 'Mafia Party',
     electronVersion: '38.8.6',
-    directories: { output: outputDir },
+    directories: { output: stagingOutputDir },
     files: ['dist/public/**/*', 'desktop/**/*'],
     npmRebuild: false,
     nodeGypRebuild: false,
@@ -48,7 +50,7 @@ const builderEnv = { ...process.env, npm_config_user_agent: `npm/10.0.0 node/${p
 delete builderEnv.npm_config_recursive;
 delete builderEnv.npm_config_filter;
 delete builderEnv.npm_execpath;
-const result = spawnSync(process.execPath, [builderCli, '--win', target, '--x64', '--projectDir', stagingDir], {
+const result = spawnSync(process.execPath, [builderCli, '--win', target, '--x64', '--publish', 'never', '--projectDir', stagingDir], {
   cwd: stagingDir,
   env: builderEnv,
   stdio: 'inherit',
@@ -56,3 +58,9 @@ const result = spawnSync(process.execPath, [builderCli, '--win', target, '--x64'
 if (result.error) throw result.error;
 if (result.status !== 0) console.error(`electron-builder exited with status ${result.status ?? 'unknown'}${result.signal ? ` (${result.signal})` : ''}`);
 if (result.status !== 0) process.exit(result.status ?? 1);
+
+await rm(outputDir, { recursive: true, force: true });
+await mkdir(outputDir, { recursive: true });
+for (const artifact of await readdir(stagingOutputDir)) {
+  await cp(path.join(stagingOutputDir, artifact), path.join(outputDir, artifact), { recursive: true });
+}
