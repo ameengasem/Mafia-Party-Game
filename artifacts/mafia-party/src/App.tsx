@@ -353,11 +353,28 @@ function Result({ game, onReset }: { game: Game; onReset: () => void }) {
 }
 
 function GameApp() {
-  const [game, setGame] = useState<Game | null>(loadSavedGame);
+  const [savedGame, setSavedGame] = useState<Game | null>(() => {
+    const loaded = loadSavedGame();
+    return loaded?.phase === 'result' ? null : loaded;
+  });
+  const [game, setGame] = useState<Game | null>(() => {
+    const loaded = loadSavedGame();
+    return loaded?.phase === 'result' ? loaded : null;
+  });
   const [confirmReset, setConfirmReset] = useState(false);
-  useEffect(() => { saveGame(game); }, [game]);
-  const reset = () => { setGame(null); setConfirmReset(false); };
-  const start = (names: string[], roleCounts: Partial<Record<RoleKey, number>>, discussionSuggestions: boolean) => { const roleList = Object.entries(roleCounts).flatMap(([role, count]) => Array.from({ length: count || 0 }, () => role as RoleKey)); const shuffledRoles = [...roleList].sort(() => Math.random() - .5); const players = names.map((name, index) => ({ id: uid(), name, role: shuffledRoles[index] || 'civilian', alive: true })); setGame({ players, phase: 'reveal', round: 0, revealIndex: 0, revealed: false, nightActions: [], nightPlayerIndex: 0, dayReport: [], votes: {}, linkedPairs: [], discussionSuggestions }); };
+  useEffect(() => {
+    // Keep an unfinished saved game available until the player chooses resume
+    // or starts a new game; the initial null state must not erase it.
+    if (!game && savedGame) return;
+    saveGame(game);
+  }, [game, savedGame]);
+  const reset = () => { setSavedGame(null); setGame(null); setConfirmReset(false); };
+  const resume = () => {
+    if (!savedGame) return;
+    setGame(savedGame);
+    setSavedGame(null);
+  };
+  const start = (names: string[], roleCounts: Partial<Record<RoleKey, number>>, discussionSuggestions: boolean) => { const roleList = Object.entries(roleCounts).flatMap(([role, count]) => Array.from({ length: count || 0 }, () => role as RoleKey)); const shuffledRoles = [...roleList].sort(() => Math.random() - .5); const players = names.map((name, index) => ({ id: uid(), name, role: shuffledRoles[index] || 'civilian', alive: true })); setSavedGame(null); setGame({ players, phase: 'reveal', round: 0, revealIndex: 0, revealed: false, nightActions: [], nightPlayerIndex: 0, dayReport: [], votes: {}, linkedPairs: [], discussionSuggestions }); };
   const update = (fn: (current: Game) => Game) => setGame((current) => current ? fn(current) : current);
   const reveal = () => update((g) => ({ ...g, revealed: true }));
   const nextReveal = () => update((g) => g.revealIndex < g.players.length - 1 ? ({ ...g, revealIndex: g.revealIndex + 1, revealed: false }) : ({ ...g, phase: 'night', round: 1, revealIndex: 0, revealed: false, nightActions: [], nightPlayerIndex: 0, dayReport: [], votes: {} }));
@@ -418,7 +435,7 @@ function GameApp() {
   const startNight = () => update((g) => ({ ...g, phase: 'night', round: g.round + 1, nightActions: [], nightPlayerIndex: 0, dayReport: [], votes: {}, lastNightInfo: undefined, players: g.players.map((p) => ({ ...p, silenced: false })) }));
   const vote = (voterId: string, targetId: string) => update((g) => ({ ...g, votes: { ...g.votes, [voterId]: targetId } }));
   const resolveVotes = () => update((g) => { const tally: Record<string, number> = {}; Object.values(g.votes).forEach((id) => { tally[id] = (tally[id] || 0) + 1; }); const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]); const topVotes = ranked[0]?.[1] || 0; const tiedIds = ranked.filter(([, count]) => count === topVotes).map(([id]) => id); const mayor = g.players.find((p) => p.alive && p.role === 'mayor'); const mayorChoice = mayor ? g.votes[mayor.id] : undefined; const eliminatedId = tiedIds.length > 1 ? (mayorChoice && tiedIds.includes(mayorChoice) ? mayorChoice : undefined) : tiedIds[0]; const eliminated = g.players.find((p) => p.id === eliminatedId); const players = eliminated ? g.players.map((p) => p.id === eliminatedId ? { ...p, alive: false } : p) : g.players; const jesterWon = eliminated?.role === 'jester'; const { winner: teamWinner, survivorWon } = getWinnerState(players); const winner: Team | undefined = jesterWon ? 'مستقل' : teamWinner; const tieNotice = !eliminated && tiedIds.length > 1 ? (mayor ? 'تعادل في الأصوات — استخدموا صوت العمدة للحسم في الجولة التالية.' : 'تعادل في الأصوات — لا أحد يخرج الليلة.') : undefined; return winner ? { ...g, players, phase: 'result', winner, survivorWon: !jesterWon && survivorWon, jesterWon } : { ...g, players, phase: 'day', dayReport: eliminated ? [eliminated.name] : [], votes: {}, round: g.round, lastNightInfo: tieNotice }; });
-  const content = !game ? <Setup onStart={start} savedGame={game} onResume={() => {}} onReset={reset} /> : game.phase === 'reveal' ? <Reveal game={game} onReveal={reveal} onNext={nextReveal} /> : game.phase === 'night' ? <Night game={game} onAction={nightAction} onNextPlayer={nextNightPlayer} onFinish={finishNight} /> : game.phase === 'day' ? <Day game={game} onVoteStart={startVoting} onNewNight={startNight} /> : game.phase === 'voting' ? <Voting game={game} onVote={vote} onResolve={resolveVotes} /> : <Result game={game} onReset={reset} />;
+  const content = !game ? <Setup onStart={start} savedGame={savedGame} onResume={resume} onReset={reset} /> : game.phase === 'reveal' ? <Reveal game={game} onReveal={reveal} onNext={nextReveal} /> : game.phase === 'night' ? <Night game={game} onAction={nightAction} onNextPlayer={nextNightPlayer} onFinish={finishNight} /> : game.phase === 'day' ? <Day game={game} onVoteStart={startVoting} onNewNight={startNight} /> : game.phase === 'voting' ? <Voting game={game} onVote={vote} onResolve={resolveVotes} /> : <Result game={game} onReset={reset} />;
   return <AppShell>{content}{game && game.phase !== 'result' && <button data-testid="button-safe-reset" onClick={() => setConfirmReset(true)} aria-label="إعادة ضبط اللعبة" className="fixed bottom-4 left-4 z-10 flex size-10 items-center justify-center rounded-xl border border-white/10 bg-[#211d39]/90 text-stone-500 backdrop-blur transition hover:text-rose-300" title="إعادة ضبط اللعبة"><RotateCcw size={16} /></button>}{confirmReset && <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#090812]/80 p-4 backdrop-blur-sm"><div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#211d39] p-6 text-center shadow-2xl"><div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-rose-400/10 text-rose-300"><Trash2 size={22} /></div><h2 className="font-serif text-xl font-semibold text-stone-100">إيقاف اللعبة؟</h2><p className="mt-2 text-sm leading-6 text-stone-500">سيُحذف التقدم المحفوظ من هذا الهاتف.</p><div className="mt-6 flex gap-2"><Button onClick={() => setConfirmReset(false)} variant="secondary" className="flex-1" testId="button-cancel-reset">أكمل اللعبة</Button><Button onClick={reset} variant="danger" className="flex-1" testId="button-confirm-reset">نعم، ابدأ من جديد</Button></div></div></div>}</AppShell>;
 }
 
