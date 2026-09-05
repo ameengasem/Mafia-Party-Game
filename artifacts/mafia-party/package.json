@@ -10,8 +10,8 @@
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
     "build:android": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && node desktop/copy-android-assets.mjs",
-    "build:desktop": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && electron-builder --win dir --x64",
-    "build:desktop:installer": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && electron-builder --win nsis --x64",
+    "build:desktop": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && node desktop/build-installer.mjs --dir",
+    "build:desktop:installer": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && node desktop/build-installer.mjs --nsis",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -106,6 +106,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "Mafia Party"
-    }
+    },
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false
   }
 }
