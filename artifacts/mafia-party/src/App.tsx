@@ -21,6 +21,26 @@ type Game = { players: Player[]; phase: Phase; round: number; revealIndex: numbe
 const queryClient = new QueryClient();
 const STORAGE_KEY = 'mafia-party-game-v1';
 
+function loadSavedGame(): Game | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<Game>;
+    if (!Array.isArray(parsed.players) || !parsed.phase) return null;
+    return {
+      ...parsed,
+      players: parsed.players,
+      nightActions: Array.isArray(parsed.nightActions) ? parsed.nightActions : [],
+      nightPlayerIndex: typeof parsed.nightPlayerIndex === 'number' ? parsed.nightPlayerIndex : 0,
+      dayReport: Array.isArray(parsed.dayReport) ? parsed.dayReport : [],
+      votes: parsed.votes && typeof parsed.votes === 'object' ? parsed.votes : {},
+      linkedPairs: Array.isArray(parsed.linkedPairs) ? parsed.linkedPairs : [],
+    } as Game;
+  } catch {
+    return null;
+  }
+}
+
 type RoleDefinition = {
   name: string;
   team: Team;
@@ -60,24 +80,7 @@ const ROLES: Record<RoleKey, RoleDefinition> = {
 
 const ROLE_KEYS = Object.keys(ROLES) as RoleKey[];
 
-const DEFAULT_NAMES = ['ليان', 'عمر', 'نور', 'ياسر', 'هند', 'سامي'];
-
-function makeBalancedRoles(count: number) {
-  const roles: RoleKey[] = [];
-  const add = (role: RoleKey) => { if (roles.length < count) roles.push(role); };
-  const mafiaCount = count >= 12 ? 3 : count >= 8 ? 2 : 1;
-  Array.from({ length: mafiaCount }).forEach(() => add('mafia'));
-  if (count >= 5) add('doctor');
-  if (count >= 6) add('detective');
-  if (count >= 8) add('reporter');
-  if (count >= 10) add('fielddoctor');
-  if (count >= 12) add('saboteur');
-  while (roles.length < count) add('civilian');
-  return roles.reduce<Partial<Record<RoleKey, number>>>((result, role) => {
-    result[role] = (result[role] || 0) + 1;
-    return result;
-  }, {});
-}
+const DEFAULT_NAMES = ['', '', '', '', ''];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function saveGame(game: Game | null) { if (game) localStorage.setItem(STORAGE_KEY, JSON.stringify(game)); else localStorage.removeItem(STORAGE_KEY); }
@@ -134,13 +137,31 @@ function RoleGuide({ onClose, privateRole }: { onClose: () => void; privateRole?
   </div>;
 }
 
+function HowToPlay({ onClose }: { onClose: () => void }) {
+  const steps = [
+    ['١', 'جهّزوا الغرفة', 'أضيفوا أسماء اللاعبين، ثم اختاروا الأدوار وعدد كل دور حتى يساوي المجموع عدد اللاعبين.'],
+    ['٢', 'اكشفوا البطاقات سراً', 'يمرّر اللاعب الهاتف إلى الشخص المكتوب اسمه، يشاهد بطاقته، ثم يخفي الشاشة قبل تمريرها.'],
+    ['٣', 'مرّروا الهاتف في الليل', 'يظهر اسم المستلم أولاً من دون كشف قدرته. يضغط اللاعب على زر الاستلام ثم ينفّذ قدرته أو يتخطاها.'],
+    ['٤', 'ناقشوا الصباح', 'يُعرض ما حدث في الليل وشرارة نقاش محايدة. لا تعتبروا الاقتراح دليلاً ولا تكشفوا أي دور.'],
+    ['٥', 'صوّتوا حتى النهاية', 'كل لاعب حي يصوّت، والعمدة يحسم التعادل. تنتهي اللعبة عندما تفوز المافيا أو المدينة أو المهرّج.'],
+  ];
+  return <div className="fixed inset-0 z-30 flex items-end justify-center bg-[#090812]/85 p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="how-to-play-title">
+    <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#211d39] p-5 shadow-2xl sm:rounded-3xl sm:p-7">
+      <div className="mb-6 flex items-start justify-between gap-4"><div><div className="text-xs font-semibold tracking-wider text-amber-300/80">دليل سريع</div><h2 id="how-to-play-title" className="mt-1 font-serif text-2xl font-semibold text-stone-100">كيف تسير ليلة المافيا؟</h2><p className="mt-2 text-sm leading-6 text-stone-400">اللعبة تعتمد على جهاز واحد. الخصوصية أهم من السرعة: اقرأوا اسم مستلم الهاتف قبل كل معلومة سرية.</p></div><button data-testid="button-close-how-to-play" onClick={onClose} aria-label="إغلاق شرح اللعبة" className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-stone-400 hover:text-white"><X size={19} /></button></div>
+      <div className="space-y-2">{steps.map(([number, title, text]) => <div key={number} className="flex gap-3 rounded-2xl border border-white/8 bg-black/10 p-4"><span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-300/10 text-sm font-bold text-amber-300">{number}</span><div><h3 className="font-semibold text-stone-100">{title}</h3><p className="mt-1 text-sm leading-6 text-stone-400">{text}</p></div></div>)}</div>
+      <div className="mt-5 flex items-start gap-2 rounded-2xl border border-indigo-200/15 bg-indigo-300/[.06] p-4 text-xs leading-6 text-indigo-100/70"><LockKeyhole className="mt-1 shrink-0 text-indigo-200" size={15} /> لا تفتحوا دليل الأدوار أثناء تسليم الهاتف إلا للاعب الحالي؛ بعض المعلومات فيه خاصة.</div>
+    </div>
+  </div>;
+}
+
 function Setup({ onStart, savedGame, onResume, onReset }: { onStart: (names: string[], roles: Partial<Record<RoleKey, number>>, discussionSuggestions: boolean) => void; savedGame: Game | null; onResume: () => void; onReset: () => void }) {
   const [names, setNames] = useState<string[]>(DEFAULT_NAMES);
-  const [roleCounts, setRoleCounts] = useState<Partial<Record<RoleKey, number>>>(makeBalancedRoles(6));
-  const [rolesTouched, setRolesTouched] = useState(false);
+  const [roleCounts, setRoleCounts] = useState<Partial<Record<RoleKey, number>>>({});
+  const [newPlayerName, setNewPlayerName] = useState('');
   const [discussionSuggestions, setDiscussionSuggestions] = useState(true);
   const [step, setStep] = useState<1 | 2>(1);
   const [help, setHelp] = useState(false);
+  const [howToPlay, setHowToPlay] = useState(false);
   const cleanNames = names.map((name) => name.trim()).filter(Boolean);
   const hasDuplicates = new Set(cleanNames.map((name) => name.toLocaleLowerCase())).size !== cleanNames.length;
   const hasBlank = names.some((name) => !name.trim());
@@ -148,42 +169,48 @@ function Setup({ onStart, savedGame, onResume, onReset }: { onStart: (names: str
   const roleTotal = ROLE_KEYS.reduce((total, role) => total + (roleCounts[role] || 0), 0);
   const hasMafia = (roleCounts.mafia || 0) > 0;
   const canStart = validPlayerList && roleTotal === cleanNames.length && hasMafia;
-  useEffect(() => {
-    if (!rolesTouched) setRoleCounts(makeBalancedRoles(cleanNames.length || 6));
-  }, [cleanNames.length, rolesTouched]);
   const addPlayer = () => { if (names.length < 50) setNames((current) => [...current, '']); };
+  const addNamedPlayer = () => {
+    const name = newPlayerName.trim();
+    if (!name || names.length >= 50 || cleanNames.some((existing) => existing.toLocaleLowerCase() === name.toLocaleLowerCase())) return;
+    setNames((current) => [...current, name]);
+    setNewPlayerName('');
+  };
   const removePlayer = (index: number) => { if (names.length > 1) setNames((current) => current.filter((_, row) => row !== index)); };
   const updateName = (index: number, value: string) => setNames((current) => current.map((name, row) => row === index ? value : name));
-  const updateCount = (role: RoleKey, value: number) => { setRolesTouched(true); setRoleCounts((current) => ({ ...current, [role]: Math.max(0, Math.min(ROLES[role].max, Number.isFinite(value) ? value : 0)) })); };
-  const toggleRole = (role: RoleKey) => { setRolesTouched(true); setRoleCounts((current) => ({ ...current, [role]: current[role] ? 0 : 1 })); };
+  const updateCount = (role: RoleKey, value: number) => { setRoleCounts((current) => ({ ...current, [role]: Math.max(0, Math.min(ROLES[role].max, Number.isFinite(value) ? value : 0)) })); };
+  const toggleRole = (role: RoleKey) => { setRoleCounts((current) => ({ ...current, [role]: current[role] ? 0 : 1 })); };
   return <main className="screen-enter mx-auto min-h-[100dvh] max-w-7xl px-4 py-6 sm:px-8 lg:px-12">
-    <header className="flex items-center justify-between"><Brand compact /><button data-testid="button-help" onClick={() => setHelp(true)} aria-label="فتح مساعدة اللعبة" className="flex size-11 items-center justify-center rounded-xl border border-white/10 text-stone-300 transition hover:bg-white/10 hover:text-amber-200"><CircleHelp size={20} /></button></header>
+    <header className="flex items-center justify-between"><Brand compact /><div className="flex items-center gap-2"><button data-testid="button-how-to-play" onClick={() => setHowToPlay(true)} aria-label="شرح طريقة اللعب" className="flex size-11 items-center justify-center rounded-xl border border-white/10 text-stone-300 transition hover:bg-white/10 hover:text-amber-200"><Info size={19} /></button><button data-testid="button-help" onClick={() => setHelp(true)} aria-label="فتح دليل الأدوار" className="flex size-11 items-center justify-center rounded-xl border border-white/10 text-stone-300 transition hover:bg-white/10 hover:text-amber-200"><CircleHelp size={20} /></button></div></header>
     <div className="mx-auto mt-10 max-w-5xl">
       <div className="mb-8 max-w-2xl"><div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/[.07] px-3 py-1.5 text-xs text-amber-200"><Sparkles size={13} /> جهّزوا المسرح</div><h1 className="font-serif text-4xl font-semibold leading-[1.25] tracking-tight text-stone-50 sm:text-6xl">كل شخص هنا<br /><span className="text-amber-300">يخفي شيئاً.</span></h1><p className="mt-4 max-w-md text-base leading-8 text-stone-400">مرّروا الهاتف. لا تنظروا إلى الشاشة إلا عندما يحين دوركم. الليلة، الحقيقة لا تظهر دفعة واحدة.</p></div>
       {savedGame && savedGame.phase !== 'result' && <div className="rise-in mb-5 flex flex-col gap-4 rounded-2xl border border-amber-300/25 bg-amber-300/[.07] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><div className="flex size-10 items-center justify-center rounded-xl bg-amber-300/15 text-amber-300"><RotateCcw size={18} /></div><div><div className="font-semibold text-stone-100">لديكم لعبة لم تنتهِ</div><div className="text-xs text-stone-400">الجولة {savedGame.round} • {savedGame.players.filter((p) => p.alive).length} لاعباً على قيد اللعب</div></div></div><div className="flex gap-2"><Button onClick={onResume} className="min-h-10 px-4 text-xs" testId="button-resume">استئناف اللعبة</Button><Button onClick={onReset} variant="ghost" className="min-h-10 px-3 text-xs" testId="button-discard">لعبة جديدة</Button></div></div>}
       <div className="mb-5"><Progress phase="setup" setupStep={step} /></div>
       {step === 1 ? <section className="rise-in rounded-3xl border border-white/10 bg-white/[.045] p-5 shadow-2xl shadow-black/10 sm:p-7">
          <div className="mb-6 flex items-end justify-between gap-3"><div><div className="mb-1 text-xs font-semibold tracking-wider text-amber-300/80">الخطوة ١ من ٢</div><h2 className="font-serif text-2xl font-semibold text-stone-100">من في الغرفة؟</h2><p className="mt-1 text-sm text-stone-500">اكتبوا اسماً في كل خانة، وأضيفوا أو احذفوا الصفوف بسهولة.</p></div><span data-testid="text-player-count" className={`shrink-0 rounded-full px-3 py-1 text-xs ${validPlayerList ? 'bg-emerald-400/10 text-emerald-300' : 'bg-rose-400/10 text-rose-300'}`}>{cleanNames.length} / 50 لاعباً</span></div>
-        <div className="space-y-2.5">{names.map((name, index) => <div key={`player-row-${index}`} className="flex items-center gap-2"><span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-300/[.08] text-xs text-amber-200">{index + 1}</span><input data-testid={`input-player-name-${index}`} value={name} onChange={(event) => updateName(index, event.target.value)} placeholder={`اسم اللاعب ${index + 1}`} aria-label={`اسم اللاعب ${index + 1}`} maxLength={40} className="min-h-12 min-w-0 flex-1 rounded-xl border border-white/10 bg-[#161429] px-4 text-base text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-amber-300/60 focus:ring-2 focus:ring-amber-300/10" /><button data-testid={`button-remove-player-${index}`} onClick={() => removePlayer(index)} disabled={names.length <= 1} aria-label={`حذف اللاعب ${index + 1}`} className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-white/10 text-stone-500 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-300 disabled:opacity-30"><Minus size={18} /></button></div>)}</div>
-        <button data-testid="button-add-player" onClick={addPlayer} disabled={names.length >= 50} className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl border border-dashed border-amber-300/35 bg-amber-300/[.04] text-sm font-semibold text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-300/[.09]"><span className="flex size-8 items-center justify-center rounded-full bg-amber-300 text-[#1b182d]"><Plus size={19} /></span>إضافة لاعب</button>
+         <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-amber-300/15 bg-amber-300/[.04] p-3 sm:flex-row"><input data-testid="input-new-player-name" value={newPlayerName} onChange={(event) => setNewPlayerName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addNamedPlayer(); }} placeholder="اكتب الاسم ثم اضغط + لإضافته إلى الغرفة" aria-label="اسم لاعب جديد" maxLength={40} className="min-h-12 min-w-0 flex-1 rounded-xl border border-white/10 bg-[#161429] px-4 text-base text-stone-100 outline-none transition placeholder:text-stone-600 focus:border-amber-300/60 focus:ring-2 focus:ring-amber-300/10" /><button data-testid="button-add-named-player" onClick={addNamedPlayer} disabled={!newPlayerName.trim() || names.length >= 50} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-300 px-5 text-sm font-bold text-[#1b182d] transition hover:bg-amber-200 disabled:cursor-not-allowed"><Plus size={18} /> إضافة للغرفة</button></div>
+         <div className="space-y-2.5">{names.map((name, index) => <div key={`player-row-${index}`} className="flex items-center gap-2 rounded-2xl border border-white/6 bg-black/10 p-1.5"><span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-300/[.08] text-xs text-amber-200">{index + 1}</span><input data-testid={`input-player-name-${index}`} value={name} onChange={(event) => updateName(index, event.target.value)} placeholder={`اسم اللاعب ${index + 1}`} aria-label={`اسم اللاعب ${index + 1}`} maxLength={40} className="min-h-12 min-w-0 flex-1 rounded-xl bg-transparent px-3 text-base text-stone-100 outline-none transition placeholder:text-stone-600 focus:bg-white/[.03]" /><button data-testid={`button-remove-player-${index}`} onClick={() => removePlayer(index)} disabled={names.length <= 1} aria-label={`حذف اللاعب ${index + 1}`} className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-white/10 text-stone-500 transition hover:border-rose-300/30 hover:bg-rose-300/10 hover:text-rose-300 disabled:opacity-30"><Minus size={18} /></button></div>)}</div>
+         <button data-testid="button-add-player" onClick={addPlayer} disabled={names.length >= 50} className="mt-4 flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl border border-dashed border-amber-300/35 bg-amber-300/[.04] text-sm font-semibold text-amber-200 transition hover:border-amber-300/70 hover:bg-amber-300/[.09]"><span className="flex size-8 items-center justify-center rounded-full bg-amber-300 text-[#1b182d]"><Plus size={19} /></span>إضافة خانة فارغة</button>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs"><span className={hasDuplicates || hasBlank ? 'text-rose-300' : 'text-stone-500'}>{hasBlank ? 'أكملوا الأسماء الفارغة أو احذفوا الصف.' : hasDuplicates ? 'يجب أن يكون كل اسم مختلفاً.' : cleanNames.length < 5 ? `أضيفوا ${5 - cleanNames.length} أسماء أخرى على الأقل.` : 'الأسماء جاهزة للخطوة التالية.'}</span><span className="text-stone-600">الحد الأدنى ٥ • الحد الأقصى ٥٠</span></div>
         <div className="mt-7 flex justify-end"><Button onClick={() => setStep(2)} disabled={!validPlayerList} className="min-h-14 px-8 text-base" testId="button-next-roles">التالي: اختيار الأدوار <ChevronLeft size={18} /></Button></div>
       </section> : <section className="rise-in">
          <div className="mb-5 flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/[.045] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"><div><div className="mb-1 text-xs font-semibold tracking-wider text-amber-300/80">الخطوة ٢ من ٢</div><h2 className="font-serif text-2xl font-semibold text-stone-100">اختاروا أدوار الليلة</h2><p className="mt-1 text-sm text-stone-500">اضغطوا على البطاقة لتفعيل الدور، ثم اكتبوا العدد. كل دور له حد أقصى واضح.</p></div><div className={`rounded-full px-3 py-1.5 text-xs ${roleTotal === cleanNames.length ? 'bg-emerald-400/10 text-emerald-300' : 'bg-amber-300/10 text-amber-200'}`} data-testid="text-role-total">مجموع الأدوار {roleTotal} / {cleanNames.length}</div></div>
          <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-indigo-200/15 bg-indigo-300/[.05] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-indigo-300/10 text-indigo-200"><MessageCircle size={17} /></div><div><div className="text-sm font-semibold text-indigo-100">مساعدة النقاش الصباحية</div><p className="mt-1 text-xs leading-6 text-indigo-100/60">تعرض سؤالاً محايداً ولاعباً أو اثنين لفتح الحوار، من دون كشف أي دور أو ادعاء دليل.</p></div></div><button data-testid="toggle-discussion-suggestions" onClick={() => setDiscussionSuggestions((value) => !value)} aria-pressed={discussionSuggestions} className={`relative h-7 w-12 shrink-0 rounded-full transition ${discussionSuggestions ? 'bg-indigo-300' : 'bg-white/15'}`}><span className={`absolute top-1 size-5 rounded-full bg-[#211d39] transition ${discussionSuggestions ? 'right-1' : 'right-6'}`} /><span className="sr-only">{discussionSuggestions ? 'اقتراحات مفعلة' : 'اقتراحات معطلة'}</span></button></div>
-         <div className="mb-3 flex items-center gap-2 text-xs text-stone-500"><SlidersHorizontal size={15} className="text-amber-300" /> الأدوار المعروضة هنا فقط هي التي تدخل السحب. الأعداد الافتراضية متوازنة ويمكن تعديلها بالكامل.</div>
+          <div className="mb-3 flex items-center gap-2 text-xs text-stone-500"><SlidersHorizontal size={15} className="text-amber-300" /> اختاروا الأدوار بأنفسكم. لا توجد تشكيلة جاهزة مفروضة؛ الحد الأقصى لكل دور محدد حسب قوة تأثيره.</div>
          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{ROLE_KEYS.map((key) => { const role = ROLES[key]; const Icon = role.icon; const count = roleCounts[key] || 0; const enabled = count > 0; return <div data-testid={`card-role-setup-${key}`} key={key} className={`rounded-2xl border p-4 transition ${enabled ? 'border-amber-300/25 bg-[#211d39]' : 'border-white/8 bg-black/10 opacity-75'}`}><div className="flex items-start justify-between gap-3"><button data-testid={`button-toggle-role-${key}`} onClick={() => toggleRole(key)} aria-pressed={enabled} className="flex min-w-0 items-center gap-2 text-right"><span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${enabled ? 'bg-amber-300/10 text-amber-300' : 'bg-white/5 text-stone-600'}`}><Icon size={17} /></span><span><span className="block text-sm font-semibold text-stone-200">{role.name}</span><span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] ${teamClass(role.team)}`}>{role.team}</span></span></button><button data-testid={`button-toggle-role-switch-${key}`} onClick={() => toggleRole(key)} aria-label={`${enabled ? 'تعطيل' : 'تفعيل'} دور ${role.name}`} aria-pressed={enabled} className={`relative h-6 w-11 shrink-0 rounded-full transition ${enabled ? 'bg-amber-300' : 'bg-white/15'}`}><span className={`absolute top-1 size-4 rounded-full bg-[#211d39] transition ${enabled ? 'right-1' : 'right-6'}`} /></button></div><p className="mt-3 text-xs leading-5 text-stone-500">{role.description}</p><div className="mt-3 flex items-end justify-between gap-2 border-t border-white/8 pt-3"><div className="text-[11px] leading-5 text-stone-600">القوة {role.power}<br />المقترح حتى {role.recommendedMax === 50 ? 'حسب المجموعة' : role.recommendedMax}<br />الحد الأقصى {role.max}</div><label className="text-left text-[11px] text-stone-500">العدد<input data-testid={`input-role-${key}`} type="number" min="0" max={role.max} value={count} disabled={!enabled} onChange={(event) => updateCount(key, Number(event.target.value))} aria-label={`عدد دور ${role.name}`} className="mt-1 block w-20 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-center text-lg font-semibold text-stone-100 outline-none focus:border-amber-300 disabled:text-stone-600" /></label></div></div>; })}</div>
-         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between"><button data-testid="button-back-players" onClick={() => setStep(1)} className="inline-flex min-h-12 items-center justify-center gap-2 text-sm text-stone-400 transition hover:text-amber-200"><ChevronLeft className="rotate-180" size={16} /> العودة إلى اللاعبين</button><div className="flex flex-col gap-3 sm:flex-row"><button data-testid="button-open-role-guide" onClick={() => setHelp(true)} className="inline-flex min-h-12 items-center justify-center gap-2 text-sm text-stone-400 transition hover:text-amber-200"><BookOpen size={16} /> دليل الأدوار الكامل</button><Button onClick={() => onStart(cleanNames, roleCounts, discussionSuggestions)} disabled={!canStart} className="min-h-14 px-8 text-base" testId="button-start-game">وزّعوا الأدوار <ChevronLeft size={18} /></Button></div></div>
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between"><button data-testid="button-back-players" onClick={() => setStep(1)} className="inline-flex min-h-12 items-center justify-center gap-2 text-sm text-stone-400 transition hover:text-amber-200"><ChevronLeft className="rotate-180" size={16} /> العودة إلى اللاعبين</button><div className="flex flex-col gap-3 sm:flex-row"><button data-testid="button-how-to-play-roles" onClick={() => setHowToPlay(true)} className="inline-flex min-h-12 items-center justify-center gap-2 text-sm text-stone-400 transition hover:text-amber-200"><Info size={16} /> كيف نلعب؟</button><button data-testid="button-open-role-guide" onClick={() => setHelp(true)} className="inline-flex min-h-12 items-center justify-center gap-2 text-sm text-stone-400 transition hover:text-amber-200"><BookOpen size={16} /> شرح الأدوار</button><Button onClick={() => onStart(cleanNames, roleCounts, discussionSuggestions)} disabled={!canStart} className="min-h-14 px-8 text-base" testId="button-start-game">وزّعوا الأدوار <ChevronLeft size={18} /></Button></div></div>
          {!canStart && <div className="mt-3 flex items-center justify-center gap-2 text-center text-xs text-amber-200/70"><Info size={14} /> {roleTotal !== cleanNames.length ? 'يجب أن يساوي مجموع الأدوار عدد اللاعبين تماماً.' : !hasMafia ? 'يجب تفعيل دور مافيا واحد على الأقل.' : 'أكملوا إعداد اللعبة للبدء.'}</div>}
       </section>}
     </div>
-    {help && <RoleGuide onClose={() => setHelp(false)} />}
+     {help && <RoleGuide onClose={() => setHelp(false)} />}
+     {howToPlay && <HowToPlay onClose={() => setHowToPlay(false)} />}
   </main>;
 }
 
 function GameFrame({ game, children, privateRole }: { game: Game; children: ReactNode; privateRole?: RoleKey }) {
   const [guide, setGuide] = useState(false);
-  return <main className="screen-enter min-h-[100dvh] px-4 py-5 sm:px-8"><header className="mx-auto mb-6 flex max-w-5xl items-center justify-between"><Brand compact /><div className="flex items-center gap-2"><button data-testid="button-open-role-guide-game" onClick={() => setGuide(true)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs text-stone-400 transition hover:border-amber-300/30 hover:text-amber-200" title="فتح دليل الأدوار"><BookOpen size={15} /> <span className="hidden sm:inline">دليل الأدوار</span></button><div className="text-left"><div className="text-[10px] tracking-wider text-stone-600">الجولة</div><div data-testid="text-round" className="font-serif text-lg text-amber-300">{game.round}</div></div></div></header><div className="mx-auto mb-8 max-w-5xl"><Progress phase={game.phase} /></div>{children}{guide && <RoleGuide onClose={() => setGuide(false)} privateRole={privateRole} />}</main>;
+  const [howToPlay, setHowToPlay] = useState(false);
+  return <main className="screen-enter min-h-[100dvh] px-4 py-5 sm:px-8"><header className="mx-auto mb-6 flex max-w-5xl items-center justify-between"><Brand compact /><div className="flex items-center gap-2"><button data-testid="button-open-how-to-play-game" onClick={() => setHowToPlay(true)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs text-stone-400 transition hover:border-amber-300/30 hover:text-amber-200" title="شرح طريقة اللعب"><Info size={15} /> <span className="hidden sm:inline">كيف نلعب؟</span></button><button data-testid="button-open-role-guide-game" onClick={() => setGuide(true)} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs text-stone-400 transition hover:border-amber-300/30 hover:text-amber-200" title="فتح دليل الأدوار"><BookOpen size={15} /> <span className="hidden sm:inline">الأدوار</span></button><div className="text-left"><div className="text-[10px] tracking-wider text-stone-600">الجولة</div><div data-testid="text-round" className="font-serif text-lg text-amber-300">{game.round}</div></div></div></header><div className="mx-auto mb-8 max-w-5xl"><Progress phase={game.phase} /></div>{children}{guide && <RoleGuide onClose={() => setGuide(false)} privateRole={privateRole} />}{howToPlay && <HowToPlay onClose={() => setHowToPlay(false)} />}</main>;
 }
 
 function Reveal({ game, onReveal, onNext }: { game: Game; onReveal: () => void; onNext: () => void }) {
@@ -196,9 +223,15 @@ function Reveal({ game, onReveal, onNext }: { game: Game; onReveal: () => void; 
 function Night({ game, onAction, onNextPlayer, onFinish }: { game: Game; onAction: (actorId: string, targetId?: string, secondaryTargetId?: string) => void; onNextPlayer: () => void; onFinish: () => void }) {
   const [privateNotice, setPrivateNotice] = useState<string | null>(null);
   const [cupidFirstTarget, setCupidFirstTarget] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
   const living = game.players.filter((player) => player.alive);
   const playerIndex = game.nightPlayerIndex ?? 0;
   const actor = living[playerIndex];
+  useEffect(() => {
+    setReady(false);
+    setPrivateNotice(null);
+    setCupidFirstTarget(null);
+  }, [actor?.id]);
   const nightRoles: RoleKey[] = ['mafia', 'godfather', 'mafioso', 'saboteur', 'doctor', 'fielddoctor', 'detective', 'psychologist', 'tracker', 'reporter', 'bodyguard', 'witch', 'vigilante', 'silencer', 'illusionist', 'oracle', 'cupid'];
   const oneUseRoles: RoleKey[] = ['witch', 'vigilante', 'oracle', 'cupid'];
   const hasAbility = Boolean(actor && nightRoles.includes(actor.role) && !(oneUseRoles.includes(actor.role) && (actor.nightUses || 0) > 0) && (actor.role !== 'cupid' || game.round === 1));
@@ -239,7 +272,7 @@ function Night({ game, onAction, onNextPlayer, onFinish }: { game: Game; onActio
       setPrivateNotice('تم تسجيل الفعل السري. أخفِ الشاشة ومرّر الهاتف.');
     }
   };
-  return <GameFrame game={game} privateRole={privateNotice ? undefined : actor?.role}>
+  return <GameFrame game={game} privateRole={privateNotice || !ready ? undefined : actor?.role}>
     <div className="mx-auto max-w-3xl">
       <div className="mb-8 text-center">
         <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-indigo-300/10 text-indigo-200"><Moon size={27} /></div>
@@ -258,15 +291,15 @@ function Night({ game, onAction, onNextPlayer, onFinish }: { game: Game; onActio
         <h2 className="font-serif text-2xl font-semibold text-stone-100">مرّ الهاتف على الجميع</h2>
         <p className="mt-2 text-sm text-stone-400">أعلنوا الصباح لمعرفة ما حدث.</p>
         <Button onClick={onFinish} className="mt-7 min-h-14 w-full sm:w-auto" testId="button-finish-night">أعلنوا الصباح <Sun size={18} /></Button>
-      </div> : <div className="rise-in rounded-3xl border border-white/10 bg-white/[.045] p-5 sm:p-7">
+       </div> : <div className="rise-in rounded-3xl border border-white/10 bg-white/[.045] p-5 sm:p-7">
         <div className="mb-6 flex items-center gap-3 border-b border-white/8 pb-5">
-          <div className="flex size-11 items-center justify-center rounded-xl bg-amber-300/10 text-amber-300"><Icon size={21} /></div>
+           <div className="flex size-11 items-center justify-center rounded-xl bg-amber-300/10 text-amber-300">{ready ? <Icon size={21} /> : <LockKeyhole size={21} />}</div>
           <div><div className="text-xs text-stone-500">سلّم الهاتف إلى</div><div data-testid={`text-night-actor-${actor.id}`} className="font-semibold text-stone-100">{actor.name}</div></div>
           <div className="mr-auto rounded-full bg-indigo-300/10 px-3 py-1 text-[10px] text-indigo-200">دور سري {playerIndex + 1}/{living.length}</div>
         </div>
-        {hasAbility ? <><div className="mb-4 rounded-2xl border border-amber-300/15 bg-amber-300/[.04] p-4"><div className="text-xs font-semibold text-amber-200">قدرة {role?.name} — القوة {role?.power}</div><p className="mt-1 text-sm leading-6 text-stone-300">{actor.role === 'cupid' && cupidFirstTarget ? `اختر اللاعب الثاني — تم اختيار ${game.players.find((player) => player.id === cupidFirstTarget)?.name}.` : role?.night}</p></div>
+         {!ready ? <div className="rounded-2xl border border-indigo-200/15 bg-indigo-300/[.05] p-7 text-center"><LockKeyhole className="mx-auto mb-4 text-indigo-200" size={30} /><h2 className="font-serif text-2xl text-stone-100">هذه الشاشة لـ {actor.name} فقط</h2><p className="mx-auto mt-3 max-w-sm text-sm leading-7 text-stone-400">تأكد أن الجميع لا ينظر. بعد استلام الهاتف اضغط الزر لعرض دورك وتعليماتك السرية.</p><Button onClick={() => setReady(true)} className="mt-6 min-h-14 w-full" testId={`button-ready-night-${actor.id}`}>استلمت الهاتف، أظهر تعليماتي <Eye size={18} /></Button></div> : hasAbility ? <><div className="mb-4 rounded-2xl border border-amber-300/15 bg-amber-300/[.04] p-4"><div className="text-xs font-semibold text-amber-200">قدرة {role?.name} — القوة {role?.power}</div><p className="mt-1 text-sm leading-6 text-stone-300">{actor.role === 'cupid' && cupidFirstTarget ? `اختر اللاعب الثاني — تم اختيار ${game.players.find((player) => player.id === cupidFirstTarget)?.name}.` : role?.night}</p></div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{targetable.filter((target) => target.id !== cupidFirstTarget).map((target) => <button data-testid={`button-target-${target.id}`} key={target.id} onClick={() => actor.role === 'cupid' && cupidFirstTarget ? submitAction(cupidFirstTarget, target.id) : submitAction(target.id)} className="flex min-h-14 items-center gap-2 rounded-xl border border-white/10 bg-black/10 px-3 text-right text-sm text-stone-200 transition hover:border-amber-300/45 hover:bg-amber-300/[.08]"><span className="flex size-8 items-center justify-center rounded-lg bg-white/8 text-xs text-stone-400">{target.name.slice(0, 1)}</span>{target.name}</button>)}</div>
-          <button data-testid={`button-skip-action-${actor.id}`} onClick={() => submitAction()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 py-3 text-xs text-stone-500 hover:text-stone-300">لا أستخدم القدرة الليلة <ChevronLeft size={14} /></button></> : <div className="rounded-2xl border border-indigo-200/15 bg-indigo-300/[.05] p-6 text-center"><Users className="mx-auto mb-3 text-indigo-200" size={25} /><h2 className="font-serif text-xl text-stone-100">لا توجد قدرة ليلية</h2><p className="mt-2 text-sm leading-6 text-stone-400">أنت آمن الآن. لا يظهر دورك لأي لاعب آخر.</p><Button onClick={onNextPlayer} className="mt-6 min-h-14 w-full" testId={`button-pass-night-${actor.id}`}>أخفي الشاشة ومرّر الهاتف <ChevronLeft size={18} /></Button></div>}
+           <button data-testid={`button-skip-action-${actor.id}`} onClick={() => submitAction()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-white/10 py-3 text-xs text-stone-500 hover:text-stone-300">لا أستخدم القدرة الليلة <ChevronLeft size={14} /></button></> : <div className="rounded-2xl border border-indigo-200/15 bg-indigo-300/[.05] p-6 text-center"><Users className="mx-auto mb-3 text-indigo-200" size={25} /><div className="text-xs text-indigo-200/70">دورك: {role?.name}</div><h2 className="mt-2 font-serif text-xl text-stone-100">لا توجد قدرة ليلية</h2><p className="mt-2 text-sm leading-6 text-stone-400">{role?.night}</p><Button onClick={onNextPlayer} className="mt-6 min-h-14 w-full" testId={`button-pass-night-${actor.id}`}>أخفي الشاشة ومرّر الهاتف <ChevronLeft size={18} /></Button></div>}
       </div>}
     </div>
   </GameFrame>;
@@ -274,19 +307,35 @@ function Night({ game, onAction, onNextPlayer, onFinish }: { game: Game; onActio
 
 function discussionPrompt(game: Game) {
   const living = game.players.filter((player) => player.alive);
-  if (!living.length) return { names: 'اللاعبين الأحياء', question: 'ما الملاحظة الأقوى التي لديكم حتى الآن؟' };
+  if (!living.length) return { title: 'راجعوا مجرى اللعبة', context: 'لم يبقَ لاعبون أحياء للنقاش.', names: 'الجميع', question: 'ما الملاحظة الأقوى التي قادتكم إلى النتيجة؟', suggestions: ['ما القرار الذي غيّر اتجاه اللعبة؟'] };
   const first = living[game.round % living.length];
   const second = living.length > 3 ? living[(game.round + 2) % living.length] : undefined;
   const names = second && second.id !== first.id ? `${first.name} و${second.name}` : first.name;
-  const questions = ['ما القرار الذي غيّر رأيك منذ بداية النقاش؟', 'من تستمع له أكثر الآن، وما السبب الذي يمكنك شرحه؟', 'ما الذي لاحظته في التصويت أو الصمت دون افتراض دور أحد؟'];
-  return { names, question: questions[game.round % questions.length] };
+  const nightStory = game.dayReport.length
+    ? `غاب ${game.dayReport.join('، ')} بعد أحداث الليل. اسألوا أنفسكم: من قد يستفيد من غيابهم؟`
+    : game.lastNightInfo?.includes('تعادل')
+      ? 'التصويت السابق تعادل؛ لا تجعلوا الحسم يتحول إلى اتهام سريع.'
+      : game.lastNightInfo?.includes('الزائر')
+        ? 'حدثت محاولة ضربة ولم تسقط ضحية. النجاة ليست دليلاً على البراءة أو الإدانة.'
+        : 'لم تسقط ضحية هذه الليلة. قد تكون حماية أو تعطيل قدرة، لذلك لا تساووا بين النجاة والبراءة.';
+  const questions = [
+    `وجّهوا السؤال إلى ${names}: ما الذي لاحظتموه في أحداث الليلة من دون كشف دور أو ادعاء دليل؟`,
+    `اسألوا ${names}: ما الشخص أو القرار الذي يحتاج تفسيراً منطقياً، ولماذا؟`,
+    `ناقشوا مع ${names}: هل يوجد أثر يخدم المافيا، أم أنكم تبنون الشك على الصمت فقط؟`,
+  ];
+  const suggestions = [
+    `اختبار اشتباه: اطلبوا من ${first.name} ترتيب أكثر احتمالين عنده وشرح السبب.`,
+    second ? `سؤال الدور المهم: اسألوا ${second.name} ماذا كان سيفعل لو كان طبيباً أو محققاً، من دون مطالبته بكشف دوره.` : 'سؤال جوهري: ما المعلومة التي تحتاجونها قبل التصويت؟',
+    game.players.some((player) => player.alive && player.silenced) ? 'تنبيه: اللاعب المُسكت لا يستطيع الدفاع عن نفسه؛ لا تجعلوا صمته دليلاً.' : 'تذكير: المافيا قد تختبئ خلف اتهام سهل، وقد يكون الشك في الشخص الخطأ جزءاً من خطتها.',
+  ];
+  return { title: game.dayReport.length ? 'أثر الليلة' : 'سؤال يفتح الخيط', context: nightStory, names, question: questions[game.round % questions.length], suggestions };
 }
 
 function Day({ game, onVoteStart, onNewNight }: { game: Game; onVoteStart: () => void; onNewNight: () => void }) {
   const eliminated = game.dayReport;
-  const prompt = useMemo(() => discussionPrompt(game), [game.round, game.players]);
-  return <GameFrame game={game}><div className="mx-auto max-w-4xl"><div className="mb-8 text-center"><div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300"><Sun size={27} /></div><div className="text-xs font-semibold tracking-[.25em] text-amber-300/70">صباح اليوم {game.round}</div><h1 className="mt-2 font-serif text-4xl font-semibold text-stone-100">من بقي واقفاً؟</h1><p className="mt-2 text-sm text-stone-500">تكلموا. استمعوا. لا تثقوا بالصمت.</p></div>{game.lastNightInfo ? <div className="mb-5 rounded-3xl border border-amber-300/20 bg-amber-300/[.06] p-6 text-center"><Gavel className="mx-auto mb-3 text-amber-300" size={28} /><div className="font-serif text-xl text-amber-100">{game.lastNightInfo}</div><div className="mt-2 text-xs text-stone-500">صوت العمدة يحسم التعادل إن اختار أحد المتعادلين.</div></div> : eliminated.length ? <div className="mb-5 rounded-3xl border border-rose-300/20 bg-rose-300/[.06] p-6 text-center"><Skull className="mx-auto mb-3 text-rose-300" size={28} /><div className="text-xs text-rose-200/60">ما تركه الليل وراءه</div><div data-testid="text-night-report" className="mt-2 font-serif text-2xl text-rose-200">{eliminated.join('، ')}</div><div className="mt-2 text-xs text-stone-500">لا أحد يعرف الدور. إلا صاحبه.</div></div> : <div className="mb-5 rounded-3xl border border-emerald-300/20 bg-emerald-300/[.06] p-6 text-center"><Shield className="mx-auto mb-3 text-emerald-300" size={28} /><div className="font-serif text-xl text-emerald-200">مرّت الليلة بلا ضحية</div><div className="mt-2 text-xs text-stone-500">لكن الخطر لم ينتهِ.</div></div>}
-       {game.discussionSuggestions !== false && <div className="mb-5 rounded-3xl border border-sky-300/20 bg-sky-300/[.06] p-5 sm:p-6"><div className="flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-300/10 text-sky-200"><MessageCircle size={20} /></div><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-serif text-xl text-sky-100">شرارة نقاش</h2><span className="rounded-full bg-sky-200/10 px-2 py-1 text-[10px] text-sky-200">اقتراح محادثة فقط</span></div><p data-testid="text-discussion-prompt" className="mt-3 text-sm leading-7 text-stone-200">وجّهوا سؤالكم إلى <strong className="text-sky-200">{prompt.names}</strong>: «{prompt.question}»</p><p className="mt-2 text-xs leading-6 text-sky-100/60">هذا اقتراح لفتح الحوار وليس دليلاً على الذنب. لا يكشف أدواراً مخفية ولا يثبت أي شيء.</p></div></div></div>}
+  const prompt = useMemo(() => discussionPrompt(game), [game.round, game.players, game.dayReport, game.lastNightInfo]);
+  return <GameFrame game={game}><div className="mx-auto max-w-4xl"><div className="mb-8 text-center"><div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-amber-300/10 text-amber-300"><Sun size={27} /></div><div className="text-xs font-semibold tracking-[.25em] text-amber-300/70">صباح اليوم {game.round}</div><h1 className="mt-2 font-serif text-4xl font-semibold text-stone-100">من بقي واقفاً؟</h1><p className="mt-2 text-sm text-stone-500">افهموا ما حدث أولاً، ثم ابنوا الشك على كلام وقرار يمكن مناقشته.</p></div>{game.lastNightInfo ? <div className="mb-5 rounded-3xl border border-amber-300/20 bg-amber-300/[.06] p-6 text-center"><Gavel className="mx-auto mb-3 text-amber-300" size={28} /><div className="font-serif text-xl text-amber-100">{game.lastNightInfo}</div><div className="mt-2 text-xs text-stone-500">صوت العمدة يحسم التعادل إن اختار أحد المتعادلين.</div></div> : eliminated.length ? <div className="mb-5 rounded-3xl border border-rose-300/20 bg-rose-300/[.06] p-6 text-center"><Skull className="mx-auto mb-3 text-rose-300" size={28} /><div className="text-xs text-rose-200/60">ما تركه الليل وراءه</div><div data-testid="text-night-report" className="mt-2 font-serif text-2xl text-rose-200">{eliminated.join('، ')}</div><div className="mt-2 text-xs text-stone-500">لا أحد يعرف الدور. إلا صاحبه.</div></div> : <div className="mb-5 rounded-3xl border border-emerald-300/20 bg-emerald-300/[.06] p-6 text-center"><Shield className="mx-auto mb-3 text-emerald-300" size={28} /><div className="font-serif text-xl text-emerald-200">مرّت الليلة بلا ضحية</div><div className="mt-2 text-xs text-stone-500">لكن الخطر لم ينتهِ؛ الحماية أو التعطيل احتمالان.</div></div>}
+        {game.discussionSuggestions !== false && <div className="mb-5 rounded-3xl border border-sky-300/20 bg-sky-300/[.06] p-5 sm:p-6"><div className="flex items-start gap-3"><div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-300/10 text-sky-200"><MessageCircle size={20} /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-serif text-xl text-sky-100">{prompt.title}</h2><span className="rounded-full bg-sky-200/10 px-2 py-1 text-[10px] text-sky-200">اقتراح محادثة فقط</span></div><p className="mt-3 text-xs leading-6 text-sky-100/70">{prompt.context}</p><p data-testid="text-discussion-prompt" className="mt-3 rounded-2xl border border-sky-200/10 bg-black/10 p-3 text-sm leading-7 text-stone-200">وجّهوا السؤال إلى <strong className="text-sky-200">{prompt.names}</strong>: «{prompt.question}»</p><div className="mt-3 grid gap-2">{prompt.suggestions.map((suggestion) => <div key={suggestion} className="rounded-xl border border-white/8 bg-white/[.03] px-3 py-2 text-xs leading-6 text-stone-300">{suggestion}</div>)}</div><p className="mt-3 text-xs leading-6 text-sky-100/60">هذه الشرارة تساعدكم على الكلام عن الليلة الماضية، لكنها ليست دليلاً ولا تكشف دوراً مخفياً. لا تعاقبوا أحداً بسبب الصمت وحده.</p></div></div></div>}
       <div className="rounded-3xl border border-white/10 bg-white/[.045] p-5 sm:p-7"><div className="mb-4 flex items-center justify-between"><h2 className="font-serif text-xl font-semibold text-stone-100">اللاعبون الأحياء</h2><span className="text-xs text-stone-500">{game.players.filter((p) => p.alive).length} لاعباً</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">{game.players.map((p) => <div data-testid={`status-player-${p.id}`} key={p.id} className={`flex items-center gap-2 rounded-xl border p-3 ${p.alive ? 'border-white/8 bg-black/10' : 'border-rose-300/10 bg-rose-300/[.03] opacity-50'}`}><div className={`flex size-8 items-center justify-center rounded-lg text-xs ${p.alive ? 'bg-amber-300/10 text-amber-200' : 'bg-rose-300/10 text-rose-300'}`}>{p.alive ? <UserRound size={15} /> : <Skull size={14} />}</div><span className={`truncate text-sm ${p.alive ? 'text-stone-200' : 'text-stone-500 line-through'}`}>{p.name}</span>{p.alive && p.silenced && <span className="text-[10px] text-violet-200">مُسكت</span>}</div>)}</div><div className="mt-7 flex flex-col gap-3 sm:flex-row"><Button onClick={onVoteStart} className="flex-1" testId="button-start-voting">ابدأوا النقاش والتصويت <Vote size={18} /></Button><Button onClick={onNewNight} variant="secondary" className="sm:w-auto" testId="button-skip-day">ليلة أخرى <Moon size={17} /></Button></div></div></div></GameFrame>;
 }
 
@@ -304,7 +353,7 @@ function Result({ game, onReset }: { game: Game; onReset: () => void }) {
 }
 
 function GameApp() {
-  const [game, setGame] = useState<Game | null>(() => { try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; } });
+  const [game, setGame] = useState<Game | null>(loadSavedGame);
   const [confirmReset, setConfirmReset] = useState(false);
   useEffect(() => { saveGame(game); }, [game]);
   const reset = () => { setGame(null); setConfirmReset(false); };
