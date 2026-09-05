@@ -1,0 +1,193 @@
+name: Build and publish Mafia Party release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag
+        required: true
+        default: v1.0.0
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10"
+
+jobs:
+  web-assets:
+    name: Build game web assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build web assets on Linux
+        run: pnpm --filter @workspace/mafia-party run build:android
+      - name: Verify web bundle
+        run: test -s artifacts/mafia-party/dist/public/index.html
+      - name: Upload shared web assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: mafia-party-web
+          path: artifacts/mafia-party/dist/public
+          if-no-files-found: error
+
+  windows-exe:
+    name: Build Windows installer
+    runs-on: windows-latest
+    needs: web-assets
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Download shared web assets
+        uses: actions/download-artifact@v4
+        with:
+          name: mafia-party-web
+          path: artifacts/mafia-party/dist/public
+      - name: Verify downloaded game assets
+        shell: pwsh
+        run: |
+          $index = "artifacts/mafia-party/dist/public/index.html"
+          if (-not (Test-Path $index)) {
+            throw "Shared game web assets were not downloaded: $index"
+          }
+      - name: Build Windows installer
+        working-directory: artifacts/mafia-party
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm exec electron-builder --win nsis --x64 --publish never
+      - name: Rename and verify installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path "artifacts/mafia-party/release" -Filter *.exe -File | Select-Object -First 1
+          if (-not $installer) {
+            throw "electron-builder did not produce a Windows installer"
+          }
+          $target = Join-Path $installer.DirectoryName "Mafia-Party-Setup.exe"
+          if ($installer.FullName -ne $target) {
+            Copy-Item $installer.FullName $target -Force
+          }
+          if ((Get-Item $target).Length -lt 1MB) {
+            throw "The Windows installer is unexpectedly small"
+          }
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: mafia-party-windows
+          path: artifacts/mafia-party/release/Mafia-Party-Setup.exe
+          if-no-files-found: error
+
+  android-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    needs: web-assets
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Download shared web assets
+        uses: actions/download-artifact@v4
+        with:
+          name: mafia-party-web
+          path: artifacts/mafia-party/dist/public
+      - name: Copy web assets into Android package
+        working-directory: artifacts/mafia-party
+        run: node desktop/copy-android-assets.mjs
+      - name: Verify Android web assets
+        run: test -s artifacts/mafia-party/android/app/src/main/assets/www/index.html
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build installable APK
+        working-directory: artifacts/mafia-party/android
+        run: gradle assembleDebug --no-daemon
+      - name: Rename and verify APK
+        run: |
+          set -euo pipefail
+          apk="artifacts/mafia-party/android/app/build/outputs/apk/debug/app-debug.apk"
+          target="artifacts/mafia-party/android/app/build/outputs/apk/debug/Mafia-Party.apk"
+          test -s "$apk"
+          cp "$apk" "$target"
+          test -s "$target"
+          unzip -l "$target" | grep -q "assets/www/index.html"
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mafia-party-android
+          path: artifacts/mafia-party/android/app/build/outputs/apk/debug/Mafia-Party.apk
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [windows-exe, android-apk]
+    steps:
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: mafia-party-windows
+          path: release-assets
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mafia-party-android
+          path: release-assets
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          test -s release-assets/Mafia-Party-Setup.exe
+          test -s release-assets/Mafia-Party.apk
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/Mafia-Party-Setup.exe release-assets/Mafia-Party.apk --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" release-assets/Mafia-Party-Setup.exe release-assets/Mafia-Party.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Mafia Party $TAG" --generate-notes
+          fi
