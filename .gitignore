@@ -5,6 +5,7 @@ dist
 tmp
 out-tsc
 *.tsbuildinfo
+attached_assets/
 artifacts/mafia-party/android/app/src/main/assets/www
 artifacts/mafia-party/android/app/build
 artifacts/mafia-party/release

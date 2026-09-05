@@ -9,9 +9,9 @@
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
-    "build:android": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && node desktop/copy-android-assets.mjs",
-    "build:desktop": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && node desktop/build-installer.mjs --dir",
-    "build:desktop:installer": "BASE_PATH=./ PORT=3000 vite build --config vite.config.ts && node desktop/build-installer.mjs --nsis",
+    "build:android": "node desktop/build-web.mjs && node desktop/copy-android-assets.mjs",
+    "build:desktop": "node desktop/build-web.mjs && node desktop/build-installer.mjs --dir",
+    "build:desktop:installer": "node desktop/build-web.mjs && node desktop/build-installer.mjs --nsis",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

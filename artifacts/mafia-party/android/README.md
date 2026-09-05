@@ -21,4 +21,5 @@ android/app/build/outputs/apk/debug/app-debug.apk
 
 ## بناء APK على GitHub
 
-الملف `.github/workflows/android-apk.yml` يبني APK تلقائيًا عند كل push أو من تبويب Actions يدويًا، ثم يرفعه كـ artifact باسم `mafia-party-apk`.
+الملف `.github/workflows/release.yml` يبني APK مع نسخة Windows تلقائيًا عند دفع
+tag مثل `v1.0.0` أو من تبويب Actions يدويًا، ثم ينشئ GitHub Release بالملفين.

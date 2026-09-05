@@ -13,7 +13,6 @@ const target = process.argv.includes('--nsis') ? 'nsis' : 'dir';
 await rm(stagingDir, { recursive: true, force: true });
 await mkdir(path.join(stagingDir, 'dist'), { recursive: true });
 await mkdir(path.join(stagingDir, 'desktop'), { recursive: true });
-await mkdir(path.join(stagingDir, 'node_modules', 'mafia-party-runtime'), { recursive: true });
 await cp(path.join(appDir, 'dist', 'public'), path.join(stagingDir, 'dist', 'public'), { recursive: true });
 await cp(path.join(desktopDir, 'main.cjs'), path.join(stagingDir, 'desktop', 'main.cjs'));
 
@@ -22,7 +21,8 @@ const stagedPackage = {
   version: '1.0.0',
   private: true,
   main: 'desktop/main.cjs',
-  dependencies: { 'mafia-party-runtime': '1.0.0' },
+  description: 'لعبة مافيا عربية تعمل دون اتصال بالإنترنت.',
+  author: 'Mafia Party',
   build: {
     appId: 'com.mafiaparty.desktop',
     productName: 'Mafia Party',
@@ -42,23 +42,6 @@ const stagedPackage = {
   },
 };
 await writeFile(path.join(stagingDir, 'package.json'), JSON.stringify(stagedPackage, null, 2));
-await writeFile(
-  path.join(stagingDir, 'node_modules', 'mafia-party-runtime', 'package.json'),
-  JSON.stringify({ name: 'mafia-party-runtime', version: '1.0.0', private: true }, null, 2),
-);
-await writeFile(
-  path.join(stagingDir, 'package-lock.json'),
-  JSON.stringify({
-    name: stagedPackage.name,
-    version: stagedPackage.version,
-    lockfileVersion: 3,
-    requires: true,
-    packages: {
-      '': { name: stagedPackage.name, version: stagedPackage.version, dependencies: stagedPackage.dependencies },
-      'node_modules/mafia-party-runtime': { name: 'mafia-party-runtime', version: '1.0.0' },
-    },
-  }, null, 2),
-);
 
 const builderCli = path.resolve(appDir, 'node_modules', 'electron-builder', 'cli.js');
 const builderEnv = { ...process.env, npm_config_user_agent: `npm/10.0.0 node/${process.versions.node}` };

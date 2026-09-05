@@ -22,6 +22,18 @@ pnpm run build:desktop:installer
 
 يفضّل تشغيل أمر المُثبّت على Windows لتجنب اعتماد NSIS على Wine عند البناء من Linux.
 
+## النشر التلقائي
+
+يحتوي المستودع على Workflow باسم `Build and publish Mafia Party`. عند دفع tag مثل
+`v1.0.0` أو تشغيله يدوياً من GitHub Actions، يبني Windows وAndroid معاً وينشئ
+GitHub Release يحتوي على:
+
+- `Mafia-Party-Setup.exe` — مُثبّت Windows.
+- `Mafia-Party.apk` — نسخة Android تجريبية قابلة للتثبيت خارج المتجر.
+
+ملف APK المنشور هو Debug APK لأن المشروع لا يحتوي على مفتاح توقيع خاص. للنشر في
+Google Play يجب إضافة توقيع Release آمن عبر GitHub Secrets لاحقاً.
+
 ## التشغيل أثناء التطوير
 
 ```bash
